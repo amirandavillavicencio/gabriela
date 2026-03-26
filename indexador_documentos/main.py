@@ -14,7 +14,7 @@ from utils import OUTPUT_DIR
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Indexador local de PDFs judiciales (sin OCR)")
+    parser = argparse.ArgumentParser(description="Indexador local de PDFs judiciales (híbrido: texto embebido + OCR)")
     parser.add_argument("pdf", nargs="*", help="Ruta(s) de PDF a procesar")
     parser.add_argument("--batch", help="Carpeta con PDFs")
     parser.add_argument("--json", action="store_true", dest="save_json", help="Generar documento.json")
@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phrase", action="store_true", help="Búsqueda exacta por frase")
     parser.add_argument("--limit", type=int, default=20, help="Límite de resultados de búsqueda")
     parser.add_argument("--ui", action="store_true", help="Abrir interfaz gráfica")
+    parser.add_argument("--force-ocr", action="store_true", help="Forzar OCR por página aunque exista texto embebido")
     return parser
 
 
@@ -37,8 +38,8 @@ def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
     return paths
 
 
-def process_one_pdf(path: Path, save_json: bool, create_chunks: bool, create_index: bool) -> dict[str, Any]:
-    doc_data = extraer_pdf(path, save_json=save_json)
+def process_one_pdf(path: Path, save_json: bool, create_chunks: bool, create_index: bool, force_ocr: bool = False) -> dict[str, Any]:
+    doc_data = extraer_pdf(path, save_json=save_json, force_ocr=force_ocr)
 
     chunks: list[dict[str, Any]] = []
     if create_chunks or create_index:
@@ -109,7 +110,7 @@ def main() -> int:
         try:
             if not path.exists() or not path.is_file():
                 raise FileNotFoundError(f"PDF inexistente: {path}")
-            result = process_one_pdf(path, save_json, create_chunks, create_index)
+            result = process_one_pdf(path, save_json, create_chunks, create_index, force_ocr=args.force_ocr)
             doc = result["doc"]
             print(f"[OK] {doc['source_name']} | páginas: {doc['page_count']} | texto: {doc['has_extractable_text']}")
             if doc["extraction_warnings"]:
