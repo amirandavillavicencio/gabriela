@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,11 @@ from extractor_pdf import PDFExtractionError, extraer_pdf
 from indexador import indexar_documento
 from ui import run_ui
 from utils import OUTPUT_DIR
+
+
+def log(level: str, message: str) -> None:
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    print(f"[{timestamp}] [{level}] {message}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,6 +45,8 @@ def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
         if not folder.exists() or not folder.is_dir():
             raise FileNotFoundError(f"Carpeta inválida: {folder}")
         pdfs = sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
+        if not pdfs:
+            log("WARN", f"No se encontraron PDFs en carpeta batch: {folder}")
         paths.extend(pdfs)
 
     unique_paths: list[Path] = []
@@ -51,6 +59,21 @@ def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
         unique_paths.append(path)
 
     return unique_paths
+
+
+def validate_output_root(raw_output_dir: str | None) -> Path:
+    output_root = Path(raw_output_dir) if raw_output_dir else OUTPUT_DIR
+    if output_root.exists() and not output_root.is_dir():
+        raise ValueError(f"Ruta de salida inválida (no es carpeta): {output_root}")
+    output_root.mkdir(parents=True, exist_ok=True)
+    return output_root
+
+
+def validate_input_path(path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(f"PDF inexistente: {path}")
+    if path.suffix.lower() != ".pdf":
+        raise ValueError(f"Archivo no PDF: {path}")
 
 
 def process_one_pdf(
@@ -95,18 +118,24 @@ def run_search(query: str, limit: int, phrase: bool, output_root: Path | None = 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    output_root = Path(args.output_dir) if args.output_dir else None
+    try:
+        output_root = validate_output_root(args.output_dir)
+    except ValueError as exc:
+        log("ERROR", str(exc))
+        return 1
 
     if args.ui:
+        log("INFO", "Iniciando interfaz gráfica.")
         run_ui()
         return 0
 
     if args.search:
         try:
+            log("INFO", f"Ejecutando búsqueda (phrase={args.phrase}, limit={args.limit}).")
             run_search(args.search, limit=args.limit, phrase=args.phrase, output_root=output_root)
             return 0
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            print(f"[ERROR] {exc}")
+            log("ERROR", str(exc))
             return 1
 
     save_json = args.save_json
@@ -119,20 +148,21 @@ def main() -> int:
     try:
         paths = gather_pdf_paths(args)
     except FileNotFoundError as exc:
-        print(f"[ERROR] {exc}")
+        log("ERROR", str(exc))
         return 1
 
     if not paths:
-        parser.print_help()
-        return 1
+        log("WARN", "No se recibieron rutas de entrada. No hay nada para procesar.")
+        log("INFO", "Finalizado. Correctos: 0 | Fallidos: 0")
+        return 0
 
     processed = 0
     failed = 0
 
     for path in paths:
         try:
-            if not path.exists() or not path.is_file():
-                raise FileNotFoundError(f"PDF inexistente: {path}")
+            validate_input_path(path)
+            log("INFO", f"Procesando: {path}")
             result = process_one_pdf(
                 path,
                 save_json,
@@ -142,21 +172,25 @@ def main() -> int:
                 output_root=output_root,
             )
             doc = result["doc"]
-            print(f"[OK] {doc['source_name']} | páginas: {doc['page_count']} | texto: {doc['has_extractable_text']}")
+            log(
+                "OK",
+                f"{doc['source_name']} | páginas: {doc['page_count']} | texto_extraible: {doc['has_extractable_text']}",
+            )
             if doc["extraction_warnings"]:
                 for w in doc["extraction_warnings"]:
-                    print(f"  - WARN: {w}")
+                    log("WARN", w)
             if result["index"]:
-                print(f"  - Índice: {result['index']}")
+                log("INFO", f"Índice: {result['index']}")
             processed += 1
         except (FileNotFoundError, PDFExtractionError, RuntimeError, ValueError) as exc:
-            print(f"[ERROR] {path}: {exc}")
+            log("ERROR", f"{path}: {exc}")
             failed += 1
         except Exception as exc:
-            print(f"[ERROR] {path}: error inesperado: {exc}")
+            log("ERROR", f"{path}: error inesperado: {exc}")
             failed += 1
 
-    print(f"Finalizado. Correctos: {processed} | Fallidos: {failed}")
+    status = "OK" if failed == 0 else "WARN"
+    log(status, f"Finalizado. Correctos: {processed} | Fallidos: {failed}")
     return 0 if processed > 0 else 1
 
 
