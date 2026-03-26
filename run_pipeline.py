@@ -14,6 +14,7 @@ if str(PROJECT_DIR) not in sys.path:
 from chunker import generar_chunks
 from extractor_pdf import PDFExtractionError, extraer_pdf
 from indexador import indexar_chunks
+from ocr_engine import OCRConfig
 from utils import ensure_dir, utc_now_iso, write_json
 
 
@@ -32,7 +33,15 @@ def iter_pdfs(input_dir: Path) -> list[Path]:
     return [p for p in pdfs if p.is_file()]
 
 
-def run_batch(input_dir: Path, output_dir: Path, force_ocr: bool = False) -> int:
+def run_batch(
+    input_dir: Path,
+    output_dir: Path,
+    force_ocr: bool = False,
+    ocr_dpi: int = 300,
+    ocr_lang: str = "spa",
+    ocr_fallback_lang: str | None = None,
+    ocr_aggressive: bool = False,
+) -> int:
     ensure_dir(output_dir)
 
     docs_output: list[dict] = []
@@ -46,7 +55,23 @@ def run_batch(input_dir: Path, output_dir: Path, force_ocr: bool = False) -> int
 
     for pdf in pdfs:
         try:
-            doc_data = extraer_pdf(pdf, save_json=False, force_ocr=force_ocr)
+            ocr_cfg = OCRConfig(
+                dpi=ocr_dpi,
+                lang=ocr_lang,
+                fallback_lang=ocr_fallback_lang,
+                oem=1,
+                psm=6,
+                retry_psm=11,
+                aggressive=ocr_aggressive,
+                apply_sharpen=ocr_aggressive,
+            )
+            doc_data = extraer_pdf(
+                pdf,
+                save_json=False,
+                force_ocr=force_ocr,
+                ocr_aggressive=ocr_aggressive,
+                ocr_config=ocr_cfg,
+            )
             doc_data["source_path"] = str(pdf)
             docs_output.append(doc_data)
 
@@ -108,6 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-dir", default="input", help="Carpeta con PDFs de entrada")
     parser.add_argument("--output-dir", default="output", help="Carpeta de salida")
     parser.add_argument("--force-ocr", action="store_true", help="Forzar OCR aunque haya texto embebido")
+    parser.add_argument("--ocr-dpi", type=int, default=300, choices=[300, 400], help="DPI OCR (300 por defecto, 400 opcional)")
+    parser.add_argument("--ocr-lang", default="spa", help="Idioma OCR principal (ej: spa)")
+    parser.add_argument("--ocr-fallback-lang", default=None, help="Idioma OCR fallback opcional (ej: spa+eng)")
+    parser.add_argument("--ocr-aggressive", action="store_true", help="Activa preprocesado y reintentos OCR agresivos")
     return parser
 
 
@@ -122,7 +151,15 @@ def main() -> int:
         LOGGER.error("Carpeta de entrada inválida: %s", input_dir)
         return 1
 
-    return run_batch(input_dir=input_dir, output_dir=output_dir, force_ocr=args.force_ocr)
+    return run_batch(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        force_ocr=args.force_ocr,
+        ocr_dpi=args.ocr_dpi,
+        ocr_lang=args.ocr_lang,
+        ocr_fallback_lang=args.ocr_fallback_lang,
+        ocr_aggressive=args.ocr_aggressive,
+    )
 
 
 if __name__ == "__main__":

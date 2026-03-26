@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import logging
 
 import fitz
 
 from normalizador import limpiar_paginas_con_ruido, limpiar_texto, texto_es_util
 from ocr_engine import (
+    OCRConfig,
     OCRPageError,
     OCRUnavailableError,
     extract_text_with_transformer,
-    ocr_pagina,
+    ocr_pagina_con_reintentos,
     validar_ocr_disponible,
 )
 from utils import build_doc_id, document_output_dir, utc_now_iso, write_json
@@ -20,13 +22,18 @@ class PDFExtractionError(Exception):
     pass
 
 
+LOGGER = logging.getLogger("extractor_pdf")
+
+
 def extraer_pdf(
     pdf_path: str | Path,
     output_root: Path | None = None,
     save_json: bool = True,
     force_ocr: bool = False,
+    ocr_aggressive: bool = False,
     ocr_backend: str = "tesseract",
     transformer_model: str = "microsoft/trocr-large-printed",
+    ocr_config: OCRConfig | None = None,
 ) -> dict[str, Any]:
     path = Path(pdf_path)
     if not path.exists() or not path.is_file():
@@ -40,7 +47,7 @@ def extraer_pdf(
     pages: list[dict[str, Any]] = []
     warnings: list[str] = []
 
-    ocr_cfg = None
+    ocr_cfg = ocr_config
     transformer_by_page: dict[int, str] = {}
     ocr_available = True
     if ocr_backend == "transformer":
@@ -55,7 +62,7 @@ def extraer_pdf(
             warnings.append(f"OCR Transformer no disponible: {exc}")
     else:
         try:
-            ocr_cfg = validar_ocr_disponible()
+            ocr_cfg = validar_ocr_disponible(ocr_cfg)
         except OCRUnavailableError as exc:
             ocr_available = False
             warnings.append(str(exc))
@@ -91,13 +98,16 @@ def extraer_pdf(
             page_obj = page_data.get("_page_obj")
             clean_text = (page_data.get("clean_text") or "").strip()
 
-            use_embedded = texto_es_util(clean_text) and not force_ocr
+            embedded_is_useful = texto_es_util(clean_text)
+            use_embedded = embedded_is_useful and not force_ocr
 
             if use_embedded:
                 page_data["has_text"] = True
                 page_data["text_source"] = "embedded_text"
                 embedded_text_pages += 1
                 continue
+            if not embedded_is_useful and clean_text:
+                LOGGER.info("página %s: texto embebido insuficiente -> OCR", page_number)
 
             if force_ocr and not ocr_available:
                 warnings.append(f"Página {page_number}: --force-ocr activo pero OCR no disponible.")
@@ -116,7 +126,9 @@ def extraer_pdf(
                 if ocr_backend == "transformer":
                     ocr_text = limpiar_texto(transformer_by_page.get(page_number, ""))
                 else:
-                    ocr_text = ocr_pagina(page_obj, config=ocr_cfg)
+                    if ocr_cfg and ocr_aggressive:
+                        ocr_cfg.aggressive = True
+                    ocr_text, _ = ocr_pagina_con_reintentos(page_obj, page_number=page_number, config=ocr_cfg)
             except OCRPageError as exc:
                 warnings.append(f"Página {page_number}: error OCR: {exc}")
                 page_data["clean_text"] = clean_text if texto_es_util(clean_text) else ""
@@ -141,6 +153,7 @@ def extraer_pdf(
                     embedded_text_pages += 1
                 else:
                     warnings.append(f"Página {page_number} sin texto útil tras OCR.")
+                    LOGGER.info("página %s: sin texto útil tras OCR", page_number)
 
         for page_data in pages:
             page_data.pop("_page_obj", None)

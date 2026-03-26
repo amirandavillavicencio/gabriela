@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import logging
 
 import fitz
 
@@ -17,6 +18,10 @@ class OCRConfig:
     dpi: int = OCR_DPI
     oem: int = OCR_OEM
     psm: int = OCR_PSM
+    fallback_lang: str | None = None
+    retry_psm: int = 11
+    aggressive: bool = False
+    apply_sharpen: bool = False
 
 
 class OCRUnavailableError(RuntimeError):
@@ -25,6 +30,9 @@ class OCRUnavailableError(RuntimeError):
 
 class OCRPageError(RuntimeError):
     pass
+
+
+LOGGER = logging.getLogger("ocr_engine")
 
 
 def _import_transformer_libs():
@@ -44,16 +52,16 @@ def _import_ocr_libs():
     try:
         import pytesseract
         from pytesseract import TesseractError
-        from PIL import Image
+        from PIL import Image, ImageEnhance, ImageFilter
     except Exception as exc:
         raise OCRUnavailableError(
             "Dependencias OCR no disponibles. Instala pytesseract y Pillow en el entorno activo."
         ) from exc
-    return pytesseract, TesseractError, Image
+    return pytesseract, TesseractError, Image, ImageEnhance, ImageFilter
 
 
 def configurar_tesseract(config: OCRConfig | None = None) -> OCRConfig:
-    pytesseract, _, _ = _import_ocr_libs()
+    pytesseract, _, _, _, _ = _import_ocr_libs()
     cfg = config or OCRConfig()
     if cfg.tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = cfg.tesseract_cmd
@@ -61,7 +69,7 @@ def configurar_tesseract(config: OCRConfig | None = None) -> OCRConfig:
 
 
 def validar_ocr_disponible(config: OCRConfig | None = None) -> OCRConfig:
-    pytesseract, _, _ = _import_ocr_libs()
+    pytesseract, _, _, _, _ = _import_ocr_libs()
     cfg = configurar_tesseract(config)
     cmd_path = Path(cfg.tesseract_cmd)
     if cfg.tesseract_cmd and not cmd_path.exists():
@@ -80,7 +88,7 @@ def validar_ocr_disponible(config: OCRConfig | None = None) -> OCRConfig:
 
 
 def _page_to_image(page: fitz.Page, dpi: int):
-    _, _, Image = _import_ocr_libs()
+    _, _, Image, _, _ = _import_ocr_libs()
     zoom = max(72, dpi) / 72.0
     matrix = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=matrix, alpha=False)
@@ -89,6 +97,29 @@ def _page_to_image(page: fitz.Page, dpi: int):
     if image.mode != "L":
         image = image.convert("L")
     return image
+
+
+def _preprocess_image(image: Any, apply_sharpen: bool = False):
+    _, _, _, ImageEnhance, ImageFilter = _import_ocr_libs()
+    gray = image.convert("L")
+    high_contrast = ImageEnhance.Contrast(gray).enhance(1.8)
+    threshold = 170
+    binarized = high_contrast.point(lambda p: 255 if p > threshold else 0)
+    if apply_sharpen:
+        return binarized.filter(ImageFilter.SHARPEN)
+    return binarized
+
+
+def _extract_with_single_config(image: Any, lang: str, oem: int, psm: int) -> str:
+    pytesseract, TesseractError, _, _, _ = _import_ocr_libs()
+    custom_config = f"--oem {oem} --psm {psm}"
+    try:
+        raw_text = pytesseract.image_to_string(image, lang=lang, config=custom_config)
+    except TesseractError as exc:
+        raise OCRPageError(str(exc)) from exc
+    except Exception as exc:
+        raise OCRPageError(f"Error inesperado en OCR: {exc}") from exc
+    return limpiar_texto(raw_text)
 
 
 def _generar_confianza(scores: list[Any], torch_module: Any) -> float:
@@ -178,15 +209,34 @@ def concatenar_texto_transformer(
 
 
 def ocr_pagina(page: fitz.Page, config: OCRConfig | None = None) -> str:
-    pytesseract, TesseractError, _ = _import_ocr_libs()
     cfg = configurar_tesseract(config)
     image = _page_to_image(page, dpi=cfg.dpi)
-    custom_config = f"--oem {cfg.oem} --psm {cfg.psm}"
-    try:
-        raw_text = pytesseract.image_to_string(image, lang=cfg.lang, config=custom_config)
-    except TesseractError as exc:
-        raise OCRPageError(str(exc)) from exc
-    except Exception as exc:
-        raise OCRPageError(f"Error inesperado en OCR: {exc}") from exc
+    preprocessed = _preprocess_image(image, apply_sharpen=cfg.apply_sharpen or cfg.aggressive)
+    return _extract_with_single_config(preprocessed, lang=cfg.lang, oem=cfg.oem, psm=cfg.psm)
 
-    return limpiar_texto(raw_text)
+
+def ocr_pagina_con_reintentos(page: fitz.Page, page_number: int, config: OCRConfig | None = None) -> tuple[str, str | None]:
+    cfg = configurar_tesseract(config)
+    image = _page_to_image(page, dpi=cfg.dpi)
+    preprocessed = _preprocess_image(image, apply_sharpen=cfg.apply_sharpen or cfg.aggressive)
+
+    attempts: list[tuple[int, str]] = [(cfg.psm, cfg.lang), (cfg.retry_psm, cfg.lang)]
+    if cfg.fallback_lang:
+        attempts.extend([(cfg.psm, cfg.fallback_lang), (cfg.retry_psm, cfg.fallback_lang)])
+
+    first_error: OCRPageError | None = None
+    for idx, (psm, lang) in enumerate(attempts, start=1):
+        LOGGER.info("página %s: OCR intento %s psm %s", page_number, idx, psm)
+        try:
+            text = _extract_with_single_config(preprocessed, lang=lang, oem=cfg.oem, psm=psm)
+        except OCRPageError as exc:
+            if first_error is None:
+                first_error = exc
+            continue
+        if text:
+            LOGGER.info("página %s: OCR exitoso con %s", page_number, lang)
+            return text, lang
+
+    if first_error is not None:
+        raise first_error
+    return "", None
