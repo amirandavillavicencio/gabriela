@@ -1,0 +1,9 @@
+# Indexador de PDFs 
+
+Convierte PDFs grandes a JSON estructurado sin OCR.
+
+## Uso
+
+```bash
+pip install -r requirements.txt
+python main.py archivo.pdf
