@@ -1,72 +1,133 @@
-import os
+from __future__ import annotations
+
+import argparse
 import sys
-import json
-import fitz
-from datetime import datetime
+from pathlib import Path
+from typing import Any
 
-def limpiar(texto):
-    if not texto:
-        return ""
-    texto = texto.replace("\x00", " ")
-    texto = texto.replace("\r", "\n")
-    return "\n".join([line.strip() for line in texto.splitlines() if line.strip()])
+from buscador import buscar_en_indice
+from chunker import generar_y_guardar_chunks
+from extractor_pdf import PDFExtractionError, extraer_pdf
+from indexador import indexar_documento
+from ui import run_ui
+from utils import OUTPUT_DIR
 
-def procesar_pdf(pdf_path):
-    doc = fitz.open(pdf_path)
 
-    pages = []
-    full = []
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Indexador local de PDFs judiciales (sin OCR)")
+    parser.add_argument("pdf", nargs="*", help="Ruta(s) de PDF a procesar")
+    parser.add_argument("--batch", help="Carpeta con PDFs")
+    parser.add_argument("--json", action="store_true", dest="save_json", help="Generar documento.json")
+    parser.add_argument("--chunks", action="store_true", help="Generar chunks.json")
+    parser.add_argument("--index", action="store_true", help="Generar índice local y global SQLite FTS5")
+    parser.add_argument("--search", help="Buscar término/frase en indice_global.sqlite")
+    parser.add_argument("--phrase", action="store_true", help="Búsqueda exacta por frase")
+    parser.add_argument("--limit", type=int, default=20, help="Límite de resultados de búsqueda")
+    parser.add_argument("--ui", action="store_true", help="Abrir interfaz gráfica")
+    return parser
 
-    for i, page in enumerate(doc, start=1):
-        raw = page.get_text("text") or ""
-        clean = limpiar(raw)
-        has_text = bool(clean)
 
-        pages.append({
-            "page_number": i,
-            "has_text": has_text,
-            "text_source": "embedded_text" if has_text else "none",
-            "raw_text": raw,
-            "clean_text": clean
-        })
+def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
+    paths: list[Path] = [Path(p) for p in args.pdf]
+    if args.batch:
+        folder = Path(args.batch)
+        if not folder.exists() or not folder.is_dir():
+            raise FileNotFoundError(f"Carpeta inválida: {folder}")
+        paths.extend(sorted(folder.glob("*.pdf")))
+    return paths
 
-        if clean:
-            full.append(clean)
 
-    doc.close()
+def process_one_pdf(path: Path, save_json: bool, create_chunks: bool, create_index: bool) -> dict[str, Any]:
+    doc_data = extraer_pdf(path, save_json=save_json)
 
-    return {
-        "id": f"doc_{int(datetime.now().timestamp())}",
-        "source_name": os.path.basename(pdf_path),
-        "page_count": len(pages),
-        "created_at": datetime.now().isoformat(),
-        "ocr_enabled": False,
-        "pages": pages,
-        "clean_full_text": "\n\n".join(full)
-    }
+    chunks: list[dict[str, Any]] = []
+    if create_chunks or create_index:
+        chunks = generar_y_guardar_chunks(doc_data)
 
-def main():
-    if len(sys.argv) < 2:
-        print("Uso: python main.py archivo.pdf")
-        return
+    index_stats = None
+    if create_index:
+        if chunks:
+            index_stats = indexar_documento(chunks, doc_data["source_name"])
+        else:
+            index_stats = {"warning": "Documento sin texto/chunks; no indexado."}
 
-    path = sys.argv[1]
+    return {"doc": doc_data, "chunks": chunks, "index": index_stats}
 
-    if not os.path.exists(path):
-        print("Archivo no encontrado")
-        return
 
-    data = procesar_pdf(path)
+def run_search(query: str, limit: int, phrase: bool) -> int:
+    db_path = OUTPUT_DIR / "indice_global.sqlite"
+    rows = buscar_en_indice(db_path, query=query, limit=limit, exact_phrase=phrase)
+    if not rows:
+        print("Sin resultados.")
+        return 0
 
-    os.makedirs("salida", exist_ok=True)
+    for idx, row in enumerate(rows, start=1):
+        print(
+            f"{idx:02d}. {row['source_name']} | páginas {row['page_start']}-{row['page_end']} | "
+            f"{row['chunk_id']}\n    {row['snippet']}"
+        )
+    return len(rows)
 
-    nombre = os.path.splitext(os.path.basename(path))[0]
-    out = f"salida/{nombre}.json"
 
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
 
-    print(f"Listo: {out}")
+    if args.ui:
+        run_ui()
+        return 0
+
+    if args.search:
+        try:
+            run_search(args.search, limit=args.limit, phrase=args.phrase)
+            return 0
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            print(f"[ERROR] {exc}")
+            return 1
+
+    save_json = args.save_json
+    create_chunks = args.chunks
+    create_index = args.index
+
+    if not any([save_json, create_chunks, create_index]):
+        save_json = True
+
+    try:
+        paths = gather_pdf_paths(args)
+    except FileNotFoundError as exc:
+        print(f"[ERROR] {exc}")
+        return 1
+
+    if not paths:
+        parser.print_help()
+        return 1
+
+    processed = 0
+    failed = 0
+
+    for path in paths:
+        try:
+            if not path.exists() or not path.is_file():
+                raise FileNotFoundError(f"PDF inexistente: {path}")
+            result = process_one_pdf(path, save_json, create_chunks, create_index)
+            doc = result["doc"]
+            print(f"[OK] {doc['source_name']} | páginas: {doc['page_count']} | texto: {doc['has_extractable_text']}")
+            if doc["extraction_warnings"]:
+                for w in doc["extraction_warnings"]:
+                    print(f"  - WARN: {w}")
+            if result["index"]:
+                print(f"  - Índice: {result['index']}")
+            processed += 1
+        except (FileNotFoundError, PDFExtractionError, RuntimeError, ValueError) as exc:
+            print(f"[ERROR] {path}: {exc}")
+            failed += 1
+        except Exception as exc:
+            print(f"[ERROR] {path}: error inesperado: {exc}")
+            failed += 1
+
+    print(f"Finalizado. Correctos: {processed} | Fallidos: {failed}")
+    return 0 if processed > 0 else 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
