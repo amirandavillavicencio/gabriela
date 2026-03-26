@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import fitz
 
@@ -24,6 +25,19 @@ class OCRUnavailableError(RuntimeError):
 
 class OCRPageError(RuntimeError):
     pass
+
+
+def _import_transformer_libs():
+    try:
+        import torch
+        from PIL import Image
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+    except Exception as exc:
+        raise OCRUnavailableError(
+            "Dependencias de OCR Transformer no disponibles. "
+            "Instala transformers, torch y Pillow en el entorno activo."
+        ) from exc
+    return torch, Image, TrOCRProcessor, VisionEncoderDecoderModel
 
 
 def _import_ocr_libs():
@@ -75,6 +89,92 @@ def _page_to_image(page: fitz.Page, dpi: int):
     if image.mode != "L":
         image = image.convert("L")
     return image
+
+
+def _generar_confianza(scores: list[Any], torch_module: Any) -> float:
+    if not scores:
+        return 0.0
+    token_confidences: list[float] = []
+    for score in scores:
+        probs = torch_module.softmax(score, dim=-1)
+        token_confidences.extend(probs.max(dim=-1).values.detach().cpu().tolist())
+    return float(sum(token_confidences) / len(token_confidences)) if token_confidences else 0.0
+
+
+def _imagen_baja_resolucion(image: Any, min_width: int = 900, min_height: int = 900) -> bool:
+    width, height = image.size
+    return width < min_width or height < min_height
+
+
+def extract_text_with_transformer(
+    pdf_path: str,
+    model_name: str = "microsoft/trocr-large-printed",
+    dpi: int = 300,
+) -> list[dict[str, Any]]:
+    """
+    Ejecuta OCR con TrOCR página por página y devuelve resultados estructurados.
+
+    Args:
+        pdf_path: Ruta del PDF escaneado.
+        model_name: Modelo TrOCR (printed o handwritten).
+        dpi: Resolución de renderizado por página.
+
+    Returns:
+        Lista de dicts: {"page": int, "text": str, "confidence": float}.
+    """
+    pdf = Path(pdf_path)
+    if not pdf.exists() or not pdf.is_file():
+        raise FileNotFoundError(f"PDF inexistente: {pdf}")
+
+    torch, _, TrOCRProcessor, VisionEncoderDecoderModel = _import_transformer_libs()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    processor = TrOCRProcessor.from_pretrained(model_name)
+    model = VisionEncoderDecoderModel.from_pretrained(model_name)
+    model.to(device)
+    model.eval()
+
+    resultados: list[dict[str, Any]] = []
+    with fitz.open(pdf) as doc:
+        for page_number, page in enumerate(doc, start=1):
+            image = _page_to_image(page, dpi=max(300, dpi))
+            if _imagen_baja_resolucion(image):
+                resultados.append({"page": page_number, "text": "", "confidence": 0.0})
+                continue
+            try:
+                pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device)
+                with torch.no_grad():
+                    generated = model.generate(
+                        pixel_values,
+                        return_dict_in_generate=True,
+                        output_scores=True,
+                    )
+                decoded = processor.batch_decode(generated.sequences, skip_special_tokens=True)[0]
+                clean_text = limpiar_texto(decoded)
+                confidence = _generar_confianza(generated.scores, torch)
+                resultados.append(
+                    {
+                        "page": page_number,
+                        "text": clean_text,
+                        "confidence": round(confidence, 4),
+                    }
+                )
+            except Exception:
+                resultados.append({"page": page_number, "text": "", "confidence": 0.0})
+    return resultados
+
+
+def concatenar_texto_transformer(
+    pdf_path: str,
+    model_name: str = "microsoft/trocr-large-printed",
+    dpi: int = 300,
+) -> str:
+    """
+    Concatena el texto extraído por TrOCR de todas las páginas del PDF.
+    """
+    page_results = extract_text_with_transformer(pdf_path, model_name=model_name, dpi=dpi)
+    partes = [item["text"] for item in page_results if item.get("text")]
+    return "\n\n".join(partes)
 
 
 def ocr_pagina(page: fitz.Page, config: OCRConfig | None = None) -> str:
