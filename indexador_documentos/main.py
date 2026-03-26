@@ -17,6 +17,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Indexador local de PDFs judiciales (híbrido: texto embebido + OCR)")
     parser.add_argument("pdf", nargs="*", help="Ruta(s) de PDF a procesar")
     parser.add_argument("--batch", help="Carpeta con PDFs")
+    parser.add_argument("--input-dir", help="Alias de --batch para ejecución en CI")
+    parser.add_argument("--output-dir", help="Carpeta de salida (por defecto: salida)")
     parser.add_argument("--json", action="store_true", dest="save_json", help="Generar documento.json")
     parser.add_argument("--chunks", action="store_true", help="Generar chunks.json")
     parser.add_argument("--index", action="store_true", help="Generar índice local y global SQLite FTS5")
@@ -30,33 +32,53 @@ def build_parser() -> argparse.ArgumentParser:
 
 def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
     paths: list[Path] = [Path(p) for p in args.pdf]
-    if args.batch:
-        folder = Path(args.batch)
+
+    batch_dir = args.batch or args.input_dir
+    if batch_dir:
+        folder = Path(batch_dir)
         if not folder.exists() or not folder.is_dir():
             raise FileNotFoundError(f"Carpeta inválida: {folder}")
-        paths.extend(sorted(folder.glob("*.pdf")))
-    return paths
+        pdfs = sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
+        paths.extend(pdfs)
+
+    unique_paths: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        key = path.resolve() if path.exists() else path
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_paths.append(path)
+
+    return unique_paths
 
 
-def process_one_pdf(path: Path, save_json: bool, create_chunks: bool, create_index: bool, force_ocr: bool = False) -> dict[str, Any]:
-    doc_data = extraer_pdf(path, save_json=save_json, force_ocr=force_ocr)
+def process_one_pdf(
+    path: Path,
+    save_json: bool,
+    create_chunks: bool,
+    create_index: bool,
+    force_ocr: bool = False,
+    output_root: Path | None = None,
+) -> dict[str, Any]:
+    doc_data = extraer_pdf(path, output_root=output_root, save_json=save_json, force_ocr=force_ocr)
 
     chunks: list[dict[str, Any]] = []
     if create_chunks or create_index:
-        chunks = generar_y_guardar_chunks(doc_data)
+        chunks = generar_y_guardar_chunks(doc_data, output_root=output_root)
 
     index_stats = None
     if create_index:
         if chunks:
-            index_stats = indexar_documento(chunks, doc_data["source_name"])
+            index_stats = indexar_documento(chunks, doc_data["source_name"], output_root=output_root)
         else:
             index_stats = {"warning": "Documento sin texto/chunks; no indexado."}
 
     return {"doc": doc_data, "chunks": chunks, "index": index_stats}
 
 
-def run_search(query: str, limit: int, phrase: bool) -> int:
-    db_path = OUTPUT_DIR / "indice_global.sqlite"
+def run_search(query: str, limit: int, phrase: bool, output_root: Path | None = None) -> int:
+    db_path = (output_root or OUTPUT_DIR) / "indice_global.sqlite"
     rows = buscar_en_indice(db_path, query=query, limit=limit, exact_phrase=phrase)
     if not rows:
         print("Sin resultados.")
@@ -73,6 +95,7 @@ def run_search(query: str, limit: int, phrase: bool) -> int:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    output_root = Path(args.output_dir) if args.output_dir else None
 
     if args.ui:
         run_ui()
@@ -80,7 +103,7 @@ def main() -> int:
 
     if args.search:
         try:
-            run_search(args.search, limit=args.limit, phrase=args.phrase)
+            run_search(args.search, limit=args.limit, phrase=args.phrase, output_root=output_root)
             return 0
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             print(f"[ERROR] {exc}")
@@ -110,7 +133,14 @@ def main() -> int:
         try:
             if not path.exists() or not path.is_file():
                 raise FileNotFoundError(f"PDF inexistente: {path}")
-            result = process_one_pdf(path, save_json, create_chunks, create_index, force_ocr=args.force_ocr)
+            result = process_one_pdf(
+                path,
+                save_json,
+                create_chunks,
+                create_index,
+                force_ocr=args.force_ocr,
+                output_root=output_root,
+            )
             doc = result["doc"]
             print(f"[OK] {doc['source_name']} | páginas: {doc['page_count']} | texto: {doc['has_extractable_text']}")
             if doc["extraction_warnings"]:

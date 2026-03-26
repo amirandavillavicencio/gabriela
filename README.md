@@ -45,9 +45,23 @@ También se puede configurar por variables de entorno (`TESSERACT_CMD`, `TESSERA
 ```bash
 python indexador_documentos/main.py archivo.pdf --json --chunks --index
 python indexador_documentos/main.py --batch carpeta --json --chunks --index
+python indexador_documentos/main.py --input-dir carpeta --output-dir salida_ci --json --chunks --index
 python indexador_documentos/main.py --search "texto"
 python indexador_documentos/main.py archivo.pdf --json --chunks --index --force-ocr
 ```
+
+## Uso sin permisos de administrador (GitHub OCR)
+
+Si no puedes instalar Tesseract en tu equipo, puedes ejecutar OCR en GitHub Actions.
+
+1. Crea la carpeta `input/` en el repositorio y sube ahí uno o más PDFs.
+2. Haz commit/push de esos PDFs al repositorio.
+3. Ve a **Actions** → **OCR Pipeline** → **Run workflow**.
+4. (Opcional) Cambia `input_dir` si usas otra carpeta distinta a `input`.
+5. Espera a que el job termine y abre el artifact **resultado_ocr**.
+6. Descarga el artifact: contendrá `output/documento.json`, `output/chunks.json` y `output/indice.sqlite`.
+
+El workflow está en `.github/workflows/ocr_pipeline.yml` y ejecuta `run_pipeline.py` sin intervención manual.
 
 ## Limitaciones OCR
 

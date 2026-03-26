@@ -52,6 +52,7 @@ python main.py archivo.pdf --json
 python main.py archivo.pdf --json --chunks
 python main.py archivo.pdf --json --chunks --index
 python main.py --batch carpeta_con_pdfs --json --chunks --index
+python main.py --input-dir carpeta_con_pdfs --output-dir salida_ci --json --chunks --index
 python main.py --search "medida cautelar"
 python main.py --search "medida cautelar" --phrase
 python main.py archivo.pdf --json --chunks --index --force-ocr
