@@ -25,6 +25,7 @@ class App(tk.Tk):
         self.var_index = tk.BooleanVar(value=True)
         self.var_status = tk.StringVar(value="Listo")
         self.var_query = tk.StringVar()
+        self.var_force_ocr = tk.BooleanVar(value=False)
 
         self._build_ui()
 
@@ -49,6 +50,7 @@ class App(tk.Tk):
         ttk.Checkbutton(options_frame, text="Generar JSON", variable=self.var_json).pack(side=tk.LEFT)
         ttk.Checkbutton(options_frame, text="Generar chunks", variable=self.var_chunks).pack(side=tk.LEFT, padx=12)
         ttk.Checkbutton(options_frame, text="Indexar", variable=self.var_index).pack(side=tk.LEFT)
+        ttk.Checkbutton(options_frame, text="Forzar OCR", variable=self.var_force_ocr).pack(side=tk.LEFT, padx=12)
         ttk.Button(options_frame, text="Procesar", command=self._start_process).pack(side=tk.RIGHT)
 
         search_frame = ttk.LabelFrame(top, text="Búsqueda", padding=10)
@@ -90,9 +92,9 @@ class App(tk.Tk):
         for idx, path in enumerate(self.pdfs, start=1):
             self.var_status.set(f"Procesando {idx}/{total}: {path.name}")
             try:
-                doc_data = extraer_pdf(path, save_json=self.var_json.get())
+                doc_data = extraer_pdf(path, save_json=self.var_json.get(), force_ocr=self.var_force_ocr.get())
                 if not doc_data.get("has_extractable_text"):
-                    self._append_result(f"[WARN] {path.name}: sin texto extraíble (sin OCR).\n")
+                    self._append_result(f"[WARN] {path.name}: sin texto útil extraíble ni OCR utilizable.\n")
                 chunks = []
                 if self.var_chunks.get() or self.var_index.get():
                     chunks = generar_y_guardar_chunks(doc_data)
