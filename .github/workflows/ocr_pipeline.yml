@@ -1,0 +1,48 @@
+name: OCR Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ocr_pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            tesseract-ocr \
+            tesseract-ocr-spa \
+            poppler-utils
+
+      - name: Instalar dependencias Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install pymupdf pytesseract pillow
+
+      - name: Verificar carpeta input
+        run: |
+          mkdir -p input
+          mkdir -p output
+          echo "Contenido de input:"
+          ls -lah input || true
+
+      - name: Ejecutar pipeline OCR batch
+        run: |
+          python run_pipeline.py --input input --output output --lang spa
+
+      - name: Subir resultados
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultado_ocr
+          path: output/
+          if-no-files-found: error
