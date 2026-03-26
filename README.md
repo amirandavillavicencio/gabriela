@@ -54,3 +54,31 @@ python indexador_documentos/main.py archivo.pdf --json --chunks --index --force-
 - OCR depende de calidad del escaneo.
 - Si Tesseract o `spa` no están disponibles, el sistema continúa y reporta advertencias.
 - Una página con error OCR no detiene el lote completo.
+
+## Uso sin permisos de administrador (OCR con GitHub)
+
+Este modo permite ejecutar OCR sin instalar Tesseract localmente.
+
+1. Copia los PDFs a procesar dentro de la carpeta `input/` del repositorio.
+2. Sube los cambios al repositorio remoto (incluyendo `input/*.pdf`).
+3. En GitHub, abre **Actions** y ejecuta manualmente el workflow **OCR Pipeline**.
+4. Espera a que finalice el job y descarga el artifact **resultado_ocr**.
+5. Descomprime el artifact para obtener la carpeta `output/`.
+
+La salida tendrá esta estructura:
+
+```text
+output/
+  indice_global.sqlite
+  <nombre_pdf>/
+    documento.json
+    chunks.json
+    indice.sqlite
+```
+
+Interpretación rápida:
+
+- `documento.json`: texto por página, fuente (`embedded_text`, `ocr`, `none`) y advertencias de extracción.
+- `chunks.json`: fragmentos listos para indexación/búsqueda.
+- `indice.sqlite`: índice local por documento.
+- `indice_global.sqlite`: índice consolidado de todos los PDFs del lote.

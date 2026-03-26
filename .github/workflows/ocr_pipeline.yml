@@ -4,45 +4,37 @@ on:
   workflow_dispatch:
 
 jobs:
-  ocr_pipeline:
+  run-ocr-batch:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Instalar dependencias del sistema
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            tesseract-ocr \
-            tesseract-ocr-spa \
-            poppler-utils
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-spa poppler-utils
 
-      - name: Instalar dependencias Python
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pymupdf pytesseract pillow
+          pip install pymupdf pytesseract Pillow
 
-      - name: Verificar carpeta input
+      - name: Run batch OCR pipeline
+        env:
+          TESSERACT_CMD: /usr/bin/tesseract
+          TESSERACT_LANG: spa
         run: |
-          mkdir -p input
-          mkdir -p output
-          echo "Contenido de input:"
-          ls -lah input || true
+          python run_pipeline.py --input-dir input --output-dir output
 
-      - name: Ejecutar pipeline OCR batch
-        run: |
-          python run_pipeline.py --input input --output output --lang spa
-
-      - name: Subir resultados
+      - name: Upload OCR results artifact
         uses: actions/upload-artifact@v4
         with:
           name: resultado_ocr
           path: output/
-          if-no-files-found: error
