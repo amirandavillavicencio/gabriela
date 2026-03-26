@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-TESSERACT_CMD = os.getenv("TESSERACT_CMD", r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe")
+TESSERACT_CMD = os.getenv("TESSERACT_CMD")
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "spa")
 OCR_DPI = int(os.getenv("OCR_DPI", "300"))
 OCR_PSM = int(os.getenv("OCR_PSM", "6"))
