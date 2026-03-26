@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
+import shutil
 from typing import Any
 
 import fitz
@@ -10,9 +12,12 @@ from config import OCR_DPI, OCR_OEM, OCR_PSM, TESSERACT_CMD, TESSERACT_LANG
 from normalizador import limpiar_texto
 
 
+LOGGER = logging.getLogger("ocr_engine")
+
+
 @dataclass
 class OCRConfig:
-    tesseract_cmd: str = TESSERACT_CMD
+    tesseract_cmd: str | None = TESSERACT_CMD
     lang: str = TESSERACT_LANG
     dpi: int = OCR_DPI
     oem: int = OCR_OEM
@@ -55,18 +60,49 @@ def _import_ocr_libs():
 def configurar_tesseract(config: OCRConfig | None = None) -> OCRConfig:
     pytesseract, _, _ = _import_ocr_libs()
     cfg = config or OCRConfig()
-    if cfg.tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = cfg.tesseract_cmd
+    explicit_cmd = (cfg.tesseract_cmd or "").strip()
+
+    if explicit_cmd:
+        explicit_path = Path(explicit_cmd)
+        if explicit_path.exists():
+            resolved_cmd = str(explicit_path)
+            LOGGER.info("OCR: usando ruta explícita de Tesseract: %s", resolved_cmd)
+        else:
+            path_cmd = shutil.which("tesseract")
+            if path_cmd:
+                resolved_cmd = path_cmd
+                LOGGER.warning(
+                    "OCR: ruta explícita inválida (%s). Se usará Tesseract desde PATH: %s",
+                    explicit_cmd,
+                    resolved_cmd,
+                )
+            else:
+                resolved_cmd = explicit_cmd
+                LOGGER.warning(
+                    "OCR: ruta explícita inválida (%s) y no se encontró Tesseract en PATH.",
+                    explicit_cmd,
+                )
+    else:
+        path_cmd = shutil.which("tesseract")
+        if path_cmd:
+            resolved_cmd = path_cmd
+            LOGGER.info("OCR: usando Tesseract desde PATH: %s", resolved_cmd)
+        else:
+            resolved_cmd = "tesseract"
+            LOGGER.warning(
+                "OCR: no hay ruta explícita y Tesseract no está en PATH. "
+                "Se intentará ejecutar '%s'.",
+                resolved_cmd,
+            )
+
+    cfg.tesseract_cmd = resolved_cmd
+    pytesseract.pytesseract.tesseract_cmd = resolved_cmd
     return cfg
 
 
 def validar_ocr_disponible(config: OCRConfig | None = None) -> OCRConfig:
     pytesseract, _, _ = _import_ocr_libs()
     cfg = configurar_tesseract(config)
-    cmd_path = Path(cfg.tesseract_cmd)
-    if cfg.tesseract_cmd and not cmd_path.exists():
-        raise OCRUnavailableError(f"Tesseract no encontrado en ruta configurada: {cfg.tesseract_cmd}")
-
     try:
         langs = pytesseract.get_languages(config="")
     except Exception as exc:
