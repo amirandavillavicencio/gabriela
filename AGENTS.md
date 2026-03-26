@@ -17,17 +17,18 @@ Este proyecto está orientado a uso judicial y administrativo.
 
 ## ⚠️ Reglas críticas (NO ROMPER)
 
-- ❌ NO usar OCR
-- ❌ NO usar servicios en la nube
-- ❌ NO usar APIs externas
-- ❌ NO usar IA generativa
-- ❌ NO usar embeddings
-- ❌ NO convertir esto en aplicación web
+## Reglas críticas
 
-- ✅ TODO debe funcionar localmente
-- ✅ Debe soportar PDFs grandes (hasta 600 páginas o más)
-- ✅ Debe ser estable y predecible
+- ✅ El sistema debe funcionar localmente
+- ✅ Debe soportar PDFs grandes
+- ✅ Debe priorizar extracción híbrida:
+  - texto embebido primero
+  - OCR como fallback si no hay texto útil
 - ✅ Debe mantener trazabilidad por documento y página
+
+- ❌ No usar servicios en la nube
+- ❌ No usar APIs externas
+- ❌ No convertir esto en aplicación web
 
 ---
 
