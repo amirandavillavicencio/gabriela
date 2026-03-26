@@ -6,7 +6,13 @@ from typing import Any
 import fitz
 
 from normalizador import limpiar_paginas_con_ruido, limpiar_texto, texto_es_util
-from ocr_engine import OCRPageError, OCRUnavailableError, validar_ocr_disponible, ocr_pagina
+from ocr_engine import (
+    OCRPageError,
+    OCRUnavailableError,
+    extract_text_with_transformer,
+    ocr_pagina,
+    validar_ocr_disponible,
+)
 from utils import build_doc_id, document_output_dir, utc_now_iso, write_json
 
 
@@ -19,6 +25,8 @@ def extraer_pdf(
     output_root: Path | None = None,
     save_json: bool = True,
     force_ocr: bool = False,
+    ocr_backend: str = "tesseract",
+    transformer_model: str = "microsoft/trocr-large-printed",
 ) -> dict[str, Any]:
     path = Path(pdf_path)
     if not path.exists() or not path.is_file():
@@ -33,12 +41,24 @@ def extraer_pdf(
     warnings: list[str] = []
 
     ocr_cfg = None
+    transformer_by_page: dict[int, str] = {}
     ocr_available = True
-    try:
-        ocr_cfg = validar_ocr_disponible()
-    except OCRUnavailableError as exc:
-        ocr_available = False
-        warnings.append(str(exc))
+    if ocr_backend == "transformer":
+        try:
+            transformer_results = extract_text_with_transformer(str(path), model_name=transformer_model)
+            transformer_by_page = {item["page"]: item["text"] for item in transformer_results}
+        except OCRUnavailableError as exc:
+            ocr_available = False
+            warnings.append(str(exc))
+        except Exception as exc:
+            ocr_available = False
+            warnings.append(f"OCR Transformer no disponible: {exc}")
+    else:
+        try:
+            ocr_cfg = validar_ocr_disponible()
+        except OCRUnavailableError as exc:
+            ocr_available = False
+            warnings.append(str(exc))
 
     try:
         for i, page in enumerate(doc, start=1):
@@ -93,7 +113,10 @@ def extraer_pdf(
                 continue
 
             try:
-                ocr_text = ocr_pagina(page_obj, config=ocr_cfg)
+                if ocr_backend == "transformer":
+                    ocr_text = limpiar_texto(transformer_by_page.get(page_number, ""))
+                else:
+                    ocr_text = ocr_pagina(page_obj, config=ocr_cfg)
             except OCRPageError as exc:
                 warnings.append(f"Página {page_number}: error OCR: {exc}")
                 page_data["clean_text"] = clean_text if texto_es_util(clean_text) else ""
