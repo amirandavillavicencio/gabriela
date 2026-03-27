@@ -15,7 +15,7 @@ from chunker import generar_chunks
 from extractor_pdf import PDFExtractionError, extraer_pdf
 from indexador import indexar_chunks
 from ocr_engine import OCRConfig
-from utils import ensure_dir, utc_now_iso, write_json
+from utils import document_output_dir, ensure_dir, utc_now_iso, write_json
 
 
 LOGGER = logging.getLogger("run_pipeline")
@@ -46,6 +46,7 @@ def run_batch(
 
     docs_output: list[dict] = []
     all_chunks: list[dict] = []
+    chunks_by_doc: list[tuple[str, list[dict]]] = []
     failed: list[dict[str, str]] = []
 
     pdfs = iter_pdfs(input_dir)
@@ -54,6 +55,7 @@ def run_batch(
         return 1
 
     for pdf in pdfs:
+        LOGGER.info("Procesando PDF %s", pdf.name)
         try:
             ocr_cfg = OCRConfig(
                 dpi=ocr_dpi,
@@ -77,13 +79,33 @@ def run_batch(
 
             chunks = generar_chunks(doc_data)
             all_chunks.extend(chunks)
+            chunks_by_doc.append((doc_data["id"], chunks))
+
+            doc_output_dir = document_output_dir(doc_data["source_name"], output_dir)
+            documento_path = doc_output_dir / "documento.json"
+            chunks_path = doc_output_dir / "chunks.json"
+            indice_path = doc_output_dir / "indice.sqlite"
+
+            write_json(documento_path, doc_data)
+            write_json(chunks_path, chunks)
+
+            if indice_path.exists():
+                indice_path.unlink()
+
+            local_stats = indexar_chunks(chunks, indice_path)
+            if not chunks:
+                with sqlite3.connect(indice_path):
+                    pass
+
+            LOGGER.info("Guardado en %s/", doc_output_dir)
 
             LOGGER.info(
-                "Procesado %s | páginas=%s | texto=%s | chunks=%s",
+                "Procesado %s | páginas=%s | texto=%s | chunks=%s | índice_local=%s",
                 pdf.name,
                 doc_data.get("page_count"),
                 doc_data.get("has_extractable_text"),
                 len(chunks),
+                local_stats,
             )
         except (PDFExtractionError, FileNotFoundError, ValueError, RuntimeError) as exc:
             LOGGER.exception("Error procesando %s", pdf)
@@ -92,35 +114,43 @@ def run_batch(
             LOGGER.exception("Error inesperado procesando %s", pdf)
             failed.append({"pdf": str(pdf), "error": f"error inesperado: {exc}"})
 
-    documento_path = output_dir / "documento.json"
-    chunks_path = output_dir / "chunks.json"
-    indice_path = output_dir / "indice.sqlite"
+    indice_global_path = output_dir / "indice_global.sqlite"
+    if indice_global_path.exists():
+        indice_global_path.unlink()
+
+    global_insertados = 0
+    global_omitidos = 0
+    for _, chunks in chunks_by_doc:
+        stats = indexar_chunks(chunks, indice_global_path)
+        global_insertados += stats["insertados"]
+        global_omitidos += stats["omitidos"]
+        if chunks:
+            LOGGER.info("Añadido al índice global: doc_id=%s chunks=%s", chunks[0]["doc_id"], len(chunks))
+
+    if not all_chunks:
+        with sqlite3.connect(indice_global_path):
+            pass
 
     write_json(
-        documento_path,
+        output_dir / "batch_resumen.json",
         {
             "generated_at": utc_now_iso(),
             "input_dir": str(input_dir),
             "total_documents": len(docs_output),
             "failed_documents": failed,
-            "documents": docs_output,
+            "total_chunks": len(all_chunks),
+            "indice_global": str(indice_global_path),
+            "global_index_stats": {"insertados": global_insertados, "omitidos": global_omitidos},
         },
     )
-    write_json(chunks_path, all_chunks)
 
-    if indice_path.exists():
-        indice_path.unlink()
-
-    index_stats = indexar_chunks(all_chunks, indice_path)
-
-    if not all_chunks:
-        with sqlite3.connect(indice_path):
-            pass
-
-    LOGGER.info("documento.json: %s", documento_path)
-    LOGGER.info("chunks.json: %s", chunks_path)
-    LOGGER.info("indice.sqlite: %s", indice_path)
-    LOGGER.info("Indexación final: %s", index_stats)
+    LOGGER.info("indice_global.sqlite: %s", indice_global_path)
+    LOGGER.info(
+        "Indexación global final: insertados=%s omitidos=%s total_chunks=%s",
+        global_insertados,
+        global_omitidos,
+        len(all_chunks),
+    )
 
     if failed:
         LOGGER.warning("Documentos con error: %s", len(failed))
