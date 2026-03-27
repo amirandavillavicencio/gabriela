@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -13,7 +12,7 @@ if str(PROJECT_DIR) not in sys.path:
 
 from chunker import generar_chunks
 from extractor_pdf import PDFExtractionError, extraer_pdf
-from indexador import indexar_chunks
+from indexador import indexar_chunks, init_index
 from ocr_engine import OCRConfig
 from utils import document_output_dir, ensure_dir, utc_now_iso, write_json
 
@@ -77,6 +76,8 @@ def run_batch(
             doc_data["source_path"] = str(pdf)
             docs_output.append(doc_data)
 
+            # Flujo obligatorio por PDF:
+            # 1) extraer_pdf(...) 2) generar_chunks(...) 3) indexar_chunks(...)
             chunks = generar_chunks(doc_data)
             all_chunks.extend(chunks)
             chunks_by_doc.append((doc_data["id"], chunks))
@@ -89,13 +90,19 @@ def run_batch(
             write_json(documento_path, doc_data)
             write_json(chunks_path, chunks)
 
+            LOGGER.info("chunks generados: %s", len(chunks))
+
             if indice_path.exists():
                 indice_path.unlink()
 
-            local_stats = indexar_chunks(chunks, indice_path)
             if not chunks:
-                with sqlite3.connect(indice_path):
-                    pass
+                LOGGER.error("No se generaron chunks para %s; se omite indexación de contenido.", pdf.name)
+                init_index(indice_path)
+                local_stats = {"insertados": 0, "omitidos": 0}
+            else:
+                LOGGER.info("indexando chunks...")
+                local_stats = indexar_chunks(chunks, indice_path)
+                LOGGER.info("chunks insertados: %s", local_stats["insertados"])
 
             LOGGER.info("Guardado en %s/", doc_output_dir)
 
@@ -117,19 +124,19 @@ def run_batch(
     indice_global_path = output_dir / "indice_global.sqlite"
     if indice_global_path.exists():
         indice_global_path.unlink()
+    init_index(indice_global_path)
 
     global_insertados = 0
     global_omitidos = 0
     for _, chunks in chunks_by_doc:
+        if not chunks:
+            continue
+        LOGGER.info("indexando chunks...")
         stats = indexar_chunks(chunks, indice_global_path)
         global_insertados += stats["insertados"]
         global_omitidos += stats["omitidos"]
-        if chunks:
-            LOGGER.info("Añadido al índice global: doc_id=%s chunks=%s", chunks[0]["doc_id"], len(chunks))
-
-    if not all_chunks:
-        with sqlite3.connect(indice_global_path):
-            pass
+        LOGGER.info("chunks insertados: %s", stats["insertados"])
+        LOGGER.info("Añadido al índice global: doc_id=%s chunks=%s", chunks[0]["doc_id"], len(chunks))
 
     write_json(
         output_dir / "batch_resumen.json",
