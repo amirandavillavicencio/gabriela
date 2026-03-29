@@ -1,70 +1,57 @@
-# README.md
+# Portable desktop app for offline PDF OCR + semantic chunking + full-text search.
 
-Proyecto local para indexación y búsqueda de PDFs judiciales con flujo **híbrido automático**:
+## Requisitos del sistema
+- Python **3.11+**: https://www.python.org/downloads/
+- Tesseract OCR 5.x: https://github.com/tesseract-ocr/tesseract
+- Poppler (`pdftoppm` para `pdf2image`): https://poppler.freedesktop.org/
 
-- texto embebido (PyMuPDF)
-- limpieza de ruido repetitivo
-- OCR por fallback (Tesseract local)
-- chunking
-- indexación SQLite FTS5
-- búsqueda local
+## Instalación (3 pasos)
+1. Clona el repo y entra a la carpeta.
+2. Ejecuta: `python setup.py`
+3. Lanza app: `run.bat` (Windows) o `./run.sh` (Linux/macOS)
 
-## Requisitos
-
-- Python 3.10+
-- Dependencias del proyecto
-- Tesseract OCR instalado localmente en Windows
-- idioma español `spa` instalado en Tesseract
-
+## Uso CLI
+### Procesamiento
 ```bash
-pip install -r indexador_documentos/requirements.txt
+python app/main.py process --input data/input/documento.pdf --lang spa --output data/output
+```
+Salida esperada:
+```text
+JSON generado: data/output/json/documento.json
 ```
 
-## Configuración OCR
-
-En `indexador_documentos/config.py`:
-
-```python
-TESSERACT_CMD = r"C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-TESSERACT_LANG = "spa"
-OCR_DPI = 300
-```
-
-También se puede configurar por variables de entorno (`TESSERACT_CMD`, `TESSERACT_LANG`, `OCR_DPI`).
-
-## Flujo híbrido
-
-1. Extrae texto embebido por página
-2. Limpia ruido repetitivo
-3. Evalúa si el texto es útil
-4. Si no es útil, ejecuta OCR
-5. Guarda `text_source` por página (`embedded_text`, `ocr`, `none`)
-
-## CLI
-
+### Búsqueda
 ```bash
-python indexador_documentos/main.py archivo.pdf --json --chunks --index
-python indexador_documentos/main.py --batch carpeta --json --chunks --index
-python indexador_documentos/main.py --input-dir carpeta --output-dir salida_ci --json --chunks --index
-python indexador_documentos/main.py --search "texto"
-python indexador_documentos/main.py archivo.pdf --json --chunks --index --force-ocr
+python app/main.py search --query "medida cautelar" --fuzzy --top 10
+```
+Salida esperada:
+```text
+[12.53] documento.pdf p45 documento_chunk_0042
+...MEDIDA CAUTELAR...
 ```
 
-## Uso sin permisos de administrador (GitHub OCR)
+### Reindexado
+```bash
+python app/main.py reindex --json data/output/json/documento.json
+```
 
-Si no puedes instalar Tesseract en tu equipo, puedes ejecutar OCR en GitHub Actions.
+## JSON de salida
+Estructura:
+- `document`: metadatos globales (archivo, páginas, engine OCR, idioma, promedio de confianza)
+- `pages[]`: `page_number`, `raw_text`, `clean_text`, `ocr_confidence`, `word_count`
+- `chunks[]`: `chunk_id`, `page_start`, `page_end`, `char_start`, `char_end`, `text`, `word_count`, `chunk_index`
+- `metadata`: `total_chunks`, `avg_chunk_size_words`, `chunking_strategy`
 
-1. Crea la carpeta `input/` en el repositorio y sube ahí uno o más PDFs.
-2. Haz commit/push de esos PDFs al repositorio.
-3. Ve a **Actions** → **OCR Pipeline** → **Run workflow**.
-4. (Opcional) Cambia `input_dir` si usas otra carpeta distinta a `input`.
-5. Espera a que el job termine y abre el artifact **resultado_ocr**.
-6. Descarga el artifact: contendrá `output/documento.json`, `output/chunks.json` y `output/indice.sqlite`.
+## Configuración (`config.ini`)
+- `[ocr]`: idioma, DPI, OEM/PSM de Tesseract, fallback EasyOCR, umbral de confianza
+- `[chunking]`: `max_chunk_words`, `overlap_words`, `min_chunk_words`, `strategy`
+- `[logging]`: nivel y archivo de log
 
-El workflow está en `.github/workflows/ocr_pipeline.yml` y ejecuta `run_pipeline.py` sin intervención manual.
+## GUI
+Incluye:
+- Panel izquierdo: cargar PDF, idioma OCR, procesar, estado, log, ver JSON
+- Panel derecho: campo de búsqueda, fuzzy, resultados, visor de chunk
 
-## Limitaciones OCR
-
-- OCR depende de calidad del escaneo.
-- Si Tesseract o `spa` no están disponibles, el sistema continúa y reporta advertencias.
-- Una página con error OCR no detiene el lote completo.
+Capturas:
+- [screenshot]
+- [screenshot]
