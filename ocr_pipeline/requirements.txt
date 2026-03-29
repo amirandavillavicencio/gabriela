@@ -1,0 +1,7 @@
+flask
+pdfminer.six
+pdf2image
+surya-ocr
+paddleocr
+whoosh
+Pillow
