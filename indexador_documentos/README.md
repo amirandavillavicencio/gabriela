@@ -56,6 +56,7 @@ python main.py --input-dir carpeta_con_pdfs --output-dir salida_ci --json --chun
 python main.py --search "medida cautelar"
 python main.py --search "medida cautelar" --phrase
 python main.py archivo.pdf --json --chunks --index --force-ocr
+python main.py --gradio
 ```
 
 ## GUI
@@ -65,6 +66,20 @@ python main.py --ui
 ```
 
 Incluye opción **Forzar OCR**.
+
+## Gradio local (opcional)
+
+```bash
+pip install gradio
+python main.py --gradio
+```
+
+Flujo disponible en la interfaz Gradio:
+
+- Upload PDF
+- vista previa por página
+- búsqueda por término/frase dentro del PDF cargado
+- resultados con highlights sobre la página seleccionada
 
 ## Salida esperada
 
