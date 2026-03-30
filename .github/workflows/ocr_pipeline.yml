@@ -1,4 +1,4 @@
-name: OCR Pipeline
+name: OCR Batch Pipeline
 
 on:
   workflow_dispatch:
@@ -53,9 +53,9 @@ jobs:
             --ocr-fallback-lang spa+eng \
             --ocr-aggressive
 
-      - name: Subir resultados
+      - name: Subir resultados OCR batch
         uses: actions/upload-artifact@v4
         with:
-          name: resultado_ocr
+          name: resultado_ocr_batch
           path: output/
           if-no-files-found: error

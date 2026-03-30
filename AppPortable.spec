@@ -3,27 +3,31 @@
 from pathlib import Path
 
 root = Path.cwd()
+
+# Incluye todo el árbol de assets (html/css/js/templates/etc.)
 datas = [
-    (str(root / 'assets' / 'ui'), 'assets/ui'),
+    (str(root / "assets"), "assets"),
 ]
 
 hiddenimports = [
-    'fitz',
-    'PIL',
-    'pytesseract',
-    'pywebview',
+    "fitz",
+    "PIL",
+    "pytesseract",
+    "webview",
+    "webview.platforms.winforms",
+    "webview.platforms.edgechromium",
 ]
 
 a = Analysis(
-    ['launch_desktop.py'],
-    pathex=[str(root), str(root / 'indexador_documentos')],
+    ["launch_desktop.py"],
+    pathex=[str(root), str(root / "indexador_documentos")],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['gradio', 'torch', 'transformers'],
+    excludes=["gradio", "torch", "transformers"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -31,20 +35,23 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='AppPortable',
+    exclude_binaries=True,
+    name="AppPortable",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="AppPortable",
 )
