@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import sys
 import re
-from datetime import datetime
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,19 +20,26 @@ def _resolve_app_root() -> Path:
 
 
 APP_ROOT = _resolve_app_root()
-INPUT_DIR = APP_ROOT / "input"
-OUTPUT_DIR = APP_ROOT / "output"
-INDEX_DIR = APP_ROOT / "index"
-TEMP_DIR = APP_ROOT / "temp"
+DATA_DIR = APP_ROOT / "data"
+INPUT_DIR = DATA_DIR / "input"
+OUTPUT_DIR = DATA_DIR / "output" / "documents"
+INDEX_DIR = DATA_DIR / "output"
+APP_STATE_DIR = DATA_DIR / "app_state"
+TEMP_DIR = DATA_DIR / "temp"
 ASSETS_DIR = APP_ROOT / "assets"
+
+
+SUPPORTED_EXTENSIONS = {".pdf"}
 
 
 def ensure_runtime_dirs() -> dict[str, Path]:
     dirs = {
         "app_root": APP_ROOT,
+        "data": DATA_DIR,
         "input": INPUT_DIR,
         "output": OUTPUT_DIR,
         "index": INDEX_DIR,
+        "app_state": APP_STATE_DIR,
         "temp": TEMP_DIR,
         "assets": ASSETS_DIR,
     }
@@ -41,7 +49,7 @@ def ensure_runtime_dirs() -> dict[str, Path]:
 
 
 def utc_now_iso() -> str:
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def slugify_filename(name: str) -> str:
@@ -51,10 +59,20 @@ def slugify_filename(name: str) -> str:
     return base or "documento"
 
 
-def build_doc_id(source_name: str) -> str:
+def file_sha256(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
+    hasher = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def build_doc_id(source_name: str, file_hash: str) -> str:
     safe = slugify_filename(source_name)
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    return f"doc_{safe}_{timestamp}"
+    return f"doc_{safe}_{file_hash[:12]}"
 
 
 def ensure_dir(path: Path) -> Path:
@@ -62,9 +80,23 @@ def ensure_dir(path: Path) -> Path:
     return path
 
 
-def document_output_dir(source_name: str, base_dir: Path | None = None) -> Path:
+def document_output_dir(document_id: str, base_dir: Path | None = None) -> Path:
     root = base_dir or OUTPUT_DIR
-    return ensure_dir(root / slugify_filename(source_name))
+    normalized = document_id if document_id.startswith("doc_") else slugify_filename(document_id)
+    return ensure_dir(root / normalized)
+
+
+def document_subdirs(document_id: str, base_dir: Path | None = None) -> dict[str, Path]:
+    base = document_output_dir(document_id, base_dir)
+    subdirs = {
+        "base": base,
+        "source": ensure_dir(base / "source"),
+        "extracted": ensure_dir(base / "extracted"),
+        "index": ensure_dir(base / "index"),
+        "logs": ensure_dir(base / "logs"),
+        "temp": ensure_dir(base / "temp"),
+    }
+    return subdirs
 
 
 def write_json(path: Path, data: Any) -> None:

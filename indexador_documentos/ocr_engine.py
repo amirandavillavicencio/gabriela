@@ -5,12 +5,11 @@ import logging
 from pathlib import Path
 import shutil
 from typing import Any
-import logging
 
 import fitz
 
-from config import OCR_DPI, OCR_OEM, OCR_PSM, TESSERACT_CMD, TESSERACT_LANG
-from normalizador import limpiar_texto
+from indexador_documentos.config import OCR_DPI, OCR_OEM, OCR_PSM, TESSERACT_CMD, TESSERACT_LANG
+from indexador_documentos.normalizador import limpiar_texto
 
 
 LOGGER = logging.getLogger("ocr_engine")

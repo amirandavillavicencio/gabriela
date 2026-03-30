@@ -28,11 +28,16 @@ def buscar_en_indice(db_path: str | Path, query: str, limit: int = 20, exact_phr
         rows = conn.execute(
             """
             SELECT
+                chunk_id,
+                doc_id,
                 source_name,
                 page_start,
                 page_end,
-                chunk_id,
-                snippet(chunks_fts, 5, '…', '…', '...', 32) AS snippet
+                chunk_index,
+                extraction_layers,
+                avg_confidence,
+                bm25(chunks_fts) AS score,
+                snippet(chunks_fts, 8, '…', '…', '...', 32) AS snippet
             FROM chunks_fts
             WHERE chunks_fts MATCH ?
             ORDER BY bm25(chunks_fts)
@@ -47,10 +52,15 @@ def buscar_en_indice(db_path: str | Path, query: str, limit: int = 20, exact_phr
 
     return [
         {
-            "source_name": row["source_name"],
+            "chunk_id": row["chunk_id"],
+            "document_id": row["doc_id"],
+            "source_file": row["source_name"],
             "page_start": row["page_start"],
             "page_end": row["page_end"],
-            "chunk_id": row["chunk_id"],
+            "chunk_index": row["chunk_index"],
+            "extraction_used": row["extraction_layers"],
+            "avg_confidence": row["avg_confidence"],
+            "score": row["score"],
             "snippet": row["snippet"],
         }
         for row in rows

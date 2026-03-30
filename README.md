@@ -1,73 +1,104 @@
-# Indexador judicial PDF · Desktop portable Windows
+# Indexador documental local (backend desktop-ready)
 
-Aplicación local para extracción, chunking, indexación SQLite FTS5 y búsqueda en documentos PDF judiciales.
+Backend local para procesamiento documental con pipeline real:
 
-## Modo de uso
+**PDF → extracción nativa/OCR → normalización → JSON estructurado → chunking → indexación SQLite FTS5 → búsqueda local**.
 
-### Desarrollo
+## Qué hace ahora
+
+- Ingesta y validación de PDFs.
+- Extracción híbrida por página (texto nativo primero, OCR como fallback).
+- Normalización de texto robusta para documentos judiciales/administrativos.
+- Exportación de `document.json`, `pages.json` y `chunks.json` por documento.
+- Indexación local con SQLite FTS5 (índice local por documento + índice global).
+- Servicio de búsqueda rankeada sobre chunks ya indexados.
+- Servicios de backend listos para integrar con UI de escritorio.
+
+## Arquitectura (módulos principales)
+
+- `indexador_documentos/extractor_pdf.py`: extracción PDF + fallback OCR + trazabilidad por página.
+- `indexador_documentos/normalizador.py`: limpieza y validación de texto útil.
+- `indexador_documentos/chunker.py`: chunking semántico por párrafo/oración.
+- `indexador_documentos/indexador.py`: creación y actualización de índice SQLite FTS5.
+- `indexador_documentos/buscador.py`: consultas full-text con score/snippet.
+- `indexador_documentos/services.py`: orquestación (`DocumentProcessingService`, `IndexService`, `SearchService`).
+- `indexador_documentos/main.py`: entry point CLI.
+- `indexador_documentos/utils.py`: rutas, persistencia, IDs, hash y utilidades runtime.
+
+## Estructura de salida
+
+```text
+data/
+  input/
+  output/
+    indice_global.sqlite
+    documents/
+      <document_id>/
+        source/
+        extracted/
+          document.json
+          pages.json
+          chunks.json
+        index/
+          indice.sqlite
+        logs/
+        temp/
+  app_state/
+  temp/
+```
+
+## Comandos CLI
+
+Instalación:
 
 ```bash
 pip install -r indexador_documentos/requirements.txt
-python indexador_documentos/main.py --desktop
 ```
 
-### CLI
+Procesar documento:
 
 ```bash
-python indexador_documentos/main.py archivo.pdf --json --chunks --index
-python indexador_documentos/main.py --batch input --json --chunks --index
-python indexador_documentos/main.py --search "medida cautelar"
+python -m indexador_documentos.main process "input/Tomo 09.pdf"
 ```
 
-## Carpetas runtime (auto-creadas)
+Procesar forzando OCR:
 
-```text
-input/
-output/
-index/
-temp/
-assets/ui/
+```bash
+python -m indexador_documentos.main process "input/Tomo 09.pdf" --force-ocr
 ```
 
-## Build portable para Windows (.exe)
+Buscar:
 
-```bat
-scripts\build_portable_windows.bat
+```bash
+python -m indexador_documentos.main search "medida cautelar" --limit 10
+python -m indexador_documentos.main search "prescripción adquisitiva" --phrase
 ```
 
-También puedes ejecutar manualmente:
+Reindexar:
 
-```bat
-pip install -r indexador_documentos\requirements.txt
-pip install pyinstaller
-pyinstaller --noconfirm AppPortable.spec
+```bash
+python -m indexador_documentos.main reindex
+python -m indexador_documentos.main reindex --document-id <document_id>
 ```
 
-## Resultado esperado de build
+Listar documentos y estado:
 
-```text
-dist/
-  AppPortable/
-    AppPortable.exe
-    _internal/...
-    assets/ui/ocr-pipeline-mockup.html
-    input/
-    output/
-    index/
-    temp/
+```bash
+python -m indexador_documentos.main list-docs
+python -m indexador_documentos.main status <document_id>
 ```
 
-## OCR
+## Configuración
 
-- Usa Tesseract local (autodetección por PATH o `TESSERACT_CMD`).
-- Si OCR no está disponible, la app sigue funcionando con texto embebido y muestra warning.
+Variables de entorno relevantes:
 
-Variables opcionales:
-- `TESSERACT_CMD`
-- `TESSERACT_LANG` (default `spa`)
-- `OCR_DPI`, `OCR_PSM`, `OCR_OEM`
+- OCR: `TESSERACT_CMD`, `TESSERACT_LANG`, `OCR_DPI`, `OCR_PSM`, `OCR_OEM`
+- Calidad extracción: `MIN_TEXT_CHARS_USEFUL`, `MIN_WORDS_USEFUL`, `MAX_REPEAT_LINE_RATIO`
+- Chunking: `CHUNK_MIN_CHARS`, `CHUNK_MAX_CHARS`, `CHUNK_OVERLAP_CHARS`
+- Búsqueda: `SEARCH_DEFAULT_LIMIT`
 
-## Notas
+## Limitaciones actuales
 
-- La UI desktop principal está en `assets/ui/ocr-pipeline-mockup.html` y se conecta al backend real vía `pywebview`.
-- No depende de GitHub ni de servicios en nube para operar localmente.
+- OCR depende de Tesseract instalado localmente con idioma disponible.
+- OCR Transformer sigue siendo opcional y pesado (dependencias no obligatorias).
+- El backend está desacoplado de UI, pero la UI deberá consumir `services.py` para progreso/estado.
