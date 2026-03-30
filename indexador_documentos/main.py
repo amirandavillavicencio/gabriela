@@ -1,19 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from buscador import buscar_en_indice
-from chunker import generar_y_guardar_chunks
-from desktop_app import run_desktop_app
-from extractor_pdf import PDFExtractionError, extraer_pdf
-from indexador import indexar_documento
-from ui import run_ui
-from gradio_ui import run_gradio_ui
-from utils import INDEX_DIR, OUTPUT_DIR, ensure_runtime_dirs
+from indexador_documentos.config import SEARCH_DEFAULT_LIMIT
+from indexador_documentos.services import DocumentProcessingService, IndexService, SearchService
+from indexador_documentos.utils import OUTPUT_DIR, ensure_runtime_dirs
 
 
 def log(level: str, message: str) -> None:
@@ -22,205 +17,69 @@ def log(level: str, message: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Indexador local de PDFs judiciales (híbrido: texto embebido + OCR)")
-    parser.add_argument("pdf", nargs="*", help="Ruta(s) de PDF a procesar")
-    parser.add_argument("--batch", help="Carpeta con PDFs")
-    parser.add_argument("--input-dir", help="Alias de --batch para ejecución en CI")
-    parser.add_argument("--output-dir", help="Carpeta de salida de documentos/chunks")
-    parser.add_argument("--index-dir", help="Carpeta para índice global SQLite")
-    parser.add_argument("--json", action="store_true", dest="save_json", help="Generar documento.json")
-    parser.add_argument("--chunks", action="store_true", help="Generar chunks.json")
-    parser.add_argument("--index", action="store_true", help="Generar índice local y global SQLite FTS5")
-    parser.add_argument("--search", help="Buscar término/frase en indice_global.sqlite")
-    parser.add_argument("--phrase", action="store_true", help="Búsqueda exacta por frase")
-    parser.add_argument("--limit", type=int, default=20, help="Límite de resultados de búsqueda")
-    parser.add_argument("--ui", action="store_true", help="Abrir interfaz Tkinter clásica")
-    parser.add_argument("--desktop", action="store_true", help="Abrir interfaz desktop principal (mockup dashboard)")
-    parser.add_argument("--gradio", action="store_true", help="Abrir interfaz local en Gradio")
-    parser.add_argument("--force-ocr", action="store_true", help="Forzar OCR por página aunque exista texto embebido")
+    parser = argparse.ArgumentParser(description="Backend local de procesamiento documental (PDF -> JSON -> chunks -> índice -> búsqueda)")
+    subparsers = parser.add_subparsers(dest="command")
+
+    process = subparsers.add_parser("process", help="Procesar un PDF")
+    process.add_argument("file", help="Ruta del PDF")
+    process.add_argument("--force-ocr", action="store_true", help="Forzar OCR aunque haya texto nativo")
+    process.add_argument("--no-index", action="store_true", help="No indexar al finalizar")
+
+    search = subparsers.add_parser("search", help="Buscar en índice global")
+    search.add_argument("query", help="Consulta de texto")
+    search.add_argument("--phrase", action="store_true", help="Búsqueda por frase exacta")
+    search.add_argument("--limit", type=int, default=SEARCH_DEFAULT_LIMIT, help="Cantidad máxima de resultados")
+
+    reindex = subparsers.add_parser("reindex", help="Reindexar documentos procesados")
+    reindex.add_argument("--document-id", help="Reindexar solo un documento")
+
+    subparsers.add_parser("list-docs", help="Listar documentos procesados")
+
+    status = subparsers.add_parser("status", help="Estado de un documento")
+    status.add_argument("document_id", help="ID del documento")
+
+    parser.add_argument("--output-dir", help="Directorio base de documentos procesados")
     return parser
-
-
-def gather_pdf_paths(args: argparse.Namespace) -> list[Path]:
-    paths: list[Path] = [Path(p) for p in args.pdf]
-
-    batch_dir = args.batch or args.input_dir
-    if batch_dir:
-        folder = Path(batch_dir)
-        if not folder.exists() or not folder.is_dir():
-            raise FileNotFoundError(f"Carpeta inválida: {folder}")
-        pdfs = sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
-        if not pdfs:
-            log("WARN", f"No se encontraron PDFs en carpeta batch: {folder}")
-        paths.extend(pdfs)
-
-    unique_paths: list[Path] = []
-    seen: set[Path] = set()
-    for path in paths:
-        key = path.resolve() if path.exists() else path
-        if key in seen:
-            continue
-        seen.add(key)
-        unique_paths.append(path)
-
-    return unique_paths
-
-
-def validate_output_root(raw_output_dir: str | None) -> Path:
-    output_root = Path(raw_output_dir) if raw_output_dir else OUTPUT_DIR
-    if output_root.exists() and not output_root.is_dir():
-        raise ValueError(f"Ruta de salida inválida (no es carpeta): {output_root}")
-    output_root.mkdir(parents=True, exist_ok=True)
-    return output_root
-
-
-def validate_index_root(raw_index_dir: str | None) -> Path:
-    index_root = Path(raw_index_dir) if raw_index_dir else INDEX_DIR
-    if index_root.exists() and not index_root.is_dir():
-        raise ValueError(f"Ruta de índice inválida (no es carpeta): {index_root}")
-    index_root.mkdir(parents=True, exist_ok=True)
-    return index_root
-
-
-def validate_input_path(path: Path) -> None:
-    if not path.exists() or not path.is_file():
-        raise FileNotFoundError(f"PDF inexistente: {path}")
-    if path.suffix.lower() != ".pdf":
-        raise ValueError(f"Archivo no PDF: {path}")
-
-
-def process_one_pdf(
-    path: Path,
-    save_json: bool,
-    create_chunks: bool,
-    create_index: bool,
-    force_ocr: bool = False,
-    output_root: Path | None = None,
-) -> dict[str, Any]:
-    doc_data = extraer_pdf(path, output_root=output_root, save_json=save_json, force_ocr=force_ocr)
-
-    chunks: list[dict[str, Any]] = []
-    if create_chunks or create_index:
-        chunks = generar_y_guardar_chunks(doc_data, output_root=output_root)
-
-    index_stats = None
-    if create_index:
-        if chunks:
-            index_stats = indexar_documento(chunks, doc_data["source_name"], output_root=output_root)
-        else:
-            index_stats = {"warning": "Documento sin texto/chunks; no indexado."}
-
-    return {"doc": doc_data, "chunks": chunks, "index": index_stats}
-
-
-def run_search(query: str, limit: int, phrase: bool, index_root: Path | None = None) -> int:
-    db_path = (index_root or INDEX_DIR) / "indice_global.sqlite"
-    rows = buscar_en_indice(db_path, query=query, limit=limit, exact_phrase=phrase)
-    if not rows:
-        print("Sin resultados.")
-        return 0
-
-    for idx, row in enumerate(rows, start=1):
-        print(
-            f"{idx:02d}. {row['source_name']} | páginas {row['page_start']}-{row['page_end']} | "
-            f"{row['chunk_id']}\n    {row['snippet']}"
-        )
-    return len(rows)
 
 
 def main() -> int:
     ensure_runtime_dirs()
     parser = build_parser()
     args = parser.parse_args()
-    try:
-        output_root = validate_output_root(args.output_dir)
-        index_root = validate_index_root(args.index_dir)
-    except ValueError as exc:
-        log("ERROR", str(exc))
-        return 1
 
-    if args.desktop:
-        log("INFO", "Iniciando interfaz desktop principal.")
-        run_desktop_app()
+    output_root = Path(args.output_dir) if args.output_dir else OUTPUT_DIR
+
+    processing_service = DocumentProcessingService(output_root=output_root)
+    index_service = IndexService(output_root=output_root)
+    search_service = SearchService()
+
+    if args.command == "process":
+        result = processing_service.process_document(args.file, force_ocr=args.force_ocr, build_index=not args.no_index)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
-    if args.ui:
-        log("INFO", "Iniciando interfaz gráfica Tk.")
-        run_ui()
+    if args.command == "search":
+        results = search_service.search(args.query, limit=args.limit, exact_phrase=args.phrase)
+        print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
 
-    if args.gradio:
-        log("INFO", "Iniciando interfaz local Gradio.")
-        try:
-            run_gradio_ui()
-            return 0
-        except RuntimeError as exc:
-            log("ERROR", str(exc))
-            return 1
-
-    if args.search:
-        try:
-            log("INFO", f"Ejecutando búsqueda (phrase={args.phrase}, limit={args.limit}).")
-            run_search(args.search, limit=args.limit, phrase=args.phrase, index_root=index_root)
-            return 0
-        except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            log("ERROR", str(exc))
-            return 1
-
-    save_json = args.save_json
-    create_chunks = args.chunks
-    create_index = args.index
-
-    if not any([save_json, create_chunks, create_index]):
-        save_json = True
-
-    try:
-        paths = gather_pdf_paths(args)
-    except FileNotFoundError as exc:
-        log("ERROR", str(exc))
-        return 1
-
-    if not paths:
-        log("WARN", "No se recibieron rutas de entrada. No hay nada para procesar.")
-        log("INFO", "Finalizado. Correctos: 0 | Fallidos: 0")
+    if args.command == "reindex":
+        result = index_service.build_index(document_id=args.document_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
-    processed = 0
-    failed = 0
+    if args.command == "list-docs":
+        docs = processing_service.list_documents()
+        print(json.dumps(docs, ensure_ascii=False, indent=2))
+        return 0
 
-    for path in paths:
-        try:
-            validate_input_path(path)
-            log("INFO", f"Procesando: {path}")
-            result = process_one_pdf(
-                path,
-                save_json,
-                create_chunks,
-                create_index,
-                force_ocr=args.force_ocr,
-                output_root=output_root,
-            )
-            doc = result["doc"]
-            log(
-                "OK",
-                f"{doc['source_name']} | páginas: {doc['page_count']} | texto_extraible: {doc['has_extractable_text']}",
-            )
-            if doc["extraction_warnings"]:
-                for w in doc["extraction_warnings"]:
-                    log("WARN", w)
-            if result["index"]:
-                log("INFO", f"Índice: {result['index']}")
-            processed += 1
-        except (FileNotFoundError, PDFExtractionError, RuntimeError, ValueError) as exc:
-            log("ERROR", f"{path}: {exc}")
-            failed += 1
-        except Exception as exc:
-            log("ERROR", f"{path}: error inesperado: {exc}")
-            failed += 1
+    if args.command == "status":
+        status = processing_service.get_document_status(args.document_id)
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+        return 0
 
-    status = "OK" if failed == 0 else "WARN"
-    log(status, f"Finalizado. Correctos: {processed} | Fallidos: {failed}")
-    return 0 if processed > 0 else 1
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":

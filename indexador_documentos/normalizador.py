@@ -4,7 +4,7 @@ from collections import Counter
 import re
 from typing import Any
 
-from config import MAX_REPEAT_LINE_RATIO, MIN_TEXT_CHARS_USEFUL, MIN_WORDS_USEFUL
+from indexador_documentos.config import MAX_REPEAT_LINE_RATIO, MIN_TEXT_CHARS_USEFUL, MIN_WORDS_USEFUL
 
 
 _WHITESPACE_RE = re.compile(r"[\t\f\v ]+")

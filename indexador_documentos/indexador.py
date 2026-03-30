@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from utils import INDEX_DIR, OUTPUT_DIR, document_output_dir, ensure_runtime_dirs
+from indexador_documentos.utils import INDEX_DIR, OUTPUT_DIR, ensure_runtime_dirs, read_json
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -26,6 +26,9 @@ def init_index(db_path: Path) -> None:
                 source_name TEXT NOT NULL,
                 page_start INTEGER NOT NULL,
                 page_end INTEGER NOT NULL,
+                chunk_index INTEGER,
+                extraction_layers TEXT,
+                avg_confidence REAL,
                 text TEXT NOT NULL
             );
             """
@@ -39,6 +42,9 @@ def init_index(db_path: Path) -> None:
                 source_name UNINDEXED,
                 page_start UNINDEXED,
                 page_end UNINDEXED,
+                chunk_index UNINDEXED,
+                extraction_layers UNINDEXED,
+                avg_confidence UNINDEXED,
                 text,
                 tokenize='unicode61'
             );
@@ -65,36 +71,45 @@ def indexar_chunks(chunks: list[dict[str, Any]], db_path: Path) -> dict[str, int
     omitidos = 0
 
     try:
-        doc_id = chunks[0]["doc_id"]
+        doc_id = chunks[0]["document_id"]
         _remove_doc(conn, doc_id)
 
         for chunk in chunks:
+            extraction_layers = ",".join(chunk.get("extraction_layers_involved") or [])
             try:
                 conn.execute(
                     """
-                    INSERT INTO chunk_store (chunk_id, doc_id, source_name, page_start, page_end, text)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO chunk_store
+                    (chunk_id, doc_id, source_name, page_start, page_end, chunk_index, extraction_layers, avg_confidence, text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         chunk["chunk_id"],
-                        chunk["doc_id"],
-                        chunk["source_name"],
+                        chunk["document_id"],
+                        chunk["source_file"],
                         chunk["page_start"],
                         chunk["page_end"],
+                        chunk.get("chunk_index"),
+                        extraction_layers,
+                        chunk.get("avg_confidence"),
                         chunk["text"],
                     ),
                 )
                 conn.execute(
                     """
-                    INSERT INTO chunks_fts (chunk_id, doc_id, source_name, page_start, page_end, text)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO chunks_fts
+                    (chunk_id, doc_id, source_name, page_start, page_end, chunk_index, extraction_layers, avg_confidence, text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         chunk["chunk_id"],
-                        chunk["doc_id"],
-                        chunk["source_name"],
+                        chunk["document_id"],
+                        chunk["source_file"],
                         chunk["page_start"],
                         chunk["page_end"],
+                        chunk.get("chunk_index"),
+                        extraction_layers,
+                        chunk.get("avg_confidence"),
                         chunk["text"],
                     ),
                 )
@@ -109,11 +124,15 @@ def indexar_chunks(chunks: list[dict[str, Any]], db_path: Path) -> dict[str, int
     return {"insertados": insertados, "omitidos": omitidos}
 
 
-def indexar_documento(chunks: list[dict[str, Any]], source_name: str, output_root: Path | None = None) -> dict[str, Any]:
+def indexar_documento(chunks: list[dict[str, Any]], document_id: str, output_root: Path | None = None) -> dict[str, Any]:
     ensure_runtime_dirs()
-    out_dir = document_output_dir(source_name, output_root)
-    local_db = out_dir / "indice.sqlite"
-    global_db = ((output_root or OUTPUT_DIR) if output_root else INDEX_DIR) / "indice_global.sqlite"
+    docs_root = output_root or OUTPUT_DIR
+    doc_root = docs_root / document_id
+    local_db = doc_root / "index" / "indice.sqlite"
+    global_db = INDEX_DIR / "indice_global.sqlite"
+
+    local_db.parent.mkdir(parents=True, exist_ok=True)
+    global_db.parent.mkdir(parents=True, exist_ok=True)
 
     local_stats = indexar_chunks(chunks, local_db)
     global_stats = indexar_chunks(chunks, global_db)
@@ -123,4 +142,31 @@ def indexar_documento(chunks: list[dict[str, Any]], source_name: str, output_roo
         "global_db": str(global_db),
         "local": local_stats,
         "global": global_stats,
+    }
+
+
+def reindexar_todos(output_root: Path | None = None) -> dict[str, Any]:
+    docs_root = output_root or OUTPUT_DIR
+    global_db = INDEX_DIR / "indice_global.sqlite"
+    if global_db.exists():
+        global_db.unlink()
+    init_index(global_db)
+
+    total_docs = 0
+    total_chunks = 0
+    for doc_dir in sorted(docs_root.glob("doc_*")):
+        chunks_path = doc_dir / "extracted" / "chunks.json"
+        if not chunks_path.exists():
+            continue
+        chunks = read_json(chunks_path)
+        if not chunks:
+            continue
+        total_docs += 1
+        total_chunks += len(chunks)
+        indexar_documento(chunks, doc_dir.name, output_root=docs_root)
+
+    return {
+        "documents_indexed": total_docs,
+        "chunks_indexed": total_chunks,
+        "global_db": str(global_db),
     }
