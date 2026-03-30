@@ -7,14 +7,12 @@ python -m pip install --upgrade pip
 pip install -r indexador_documentos\requirements.txt
 pip install pyinstaller
 
-pyinstaller --noconfirm AppPortable.spec
+pyinstaller --noconfirm --clean AppPortable.spec
 
-if not exist dist\AppPortable\input mkdir dist\AppPortable\input
-if not exist dist\AppPortable\output mkdir dist\AppPortable\output
-if not exist dist\AppPortable\index mkdir dist\AppPortable\index
-if not exist dist\AppPortable\temp mkdir dist\AppPortable\temp
+if not exist dist\AppPortable\data\input mkdir dist\AppPortable\data\input
+if not exist dist\AppPortable\data\output mkdir dist\AppPortable\data\output
+if not exist dist\AppPortable\data\app_state mkdir dist\AppPortable\data\app_state
+if not exist dist\AppPortable\data\temp mkdir dist\AppPortable\data\temp
 
-copy /Y assets\ui\ocr-pipeline-mockup.html dist\AppPortable\assets\ui\ocr-pipeline-mockup.html >nul
-
-echo Build completado en dist\AppPortable
+echo Build completado en dist\AppPortable\AppPortable.exe
 endlocal
