@@ -11,6 +11,7 @@ from chunker import generar_y_guardar_chunks
 from extractor_pdf import PDFExtractionError, extraer_pdf
 from indexador import indexar_documento
 from ui import run_ui
+from gradio_ui import run_gradio_ui
 from utils import OUTPUT_DIR
 
 
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--phrase", action="store_true", help="Búsqueda exacta por frase")
     parser.add_argument("--limit", type=int, default=20, help="Límite de resultados de búsqueda")
     parser.add_argument("--ui", action="store_true", help="Abrir interfaz gráfica")
+    parser.add_argument("--gradio", action="store_true", help="Abrir interfaz local en Gradio")
     parser.add_argument("--force-ocr", action="store_true", help="Forzar OCR por página aunque exista texto embebido")
     return parser
 
@@ -128,6 +130,15 @@ def main() -> int:
         log("INFO", "Iniciando interfaz gráfica.")
         run_ui()
         return 0
+
+    if args.gradio:
+        log("INFO", "Iniciando interfaz local Gradio.")
+        try:
+            run_gradio_ui()
+            return 0
+        except RuntimeError as exc:
+            log("ERROR", str(exc))
+            return 1
 
     if args.search:
         try:

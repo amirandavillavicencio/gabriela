@@ -3,3 +3,4 @@ pytesseract
 Pillow
 transformers
 torch
+gradio
