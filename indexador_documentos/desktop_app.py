@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from desktop_api import DesktopAPI
-from utils import APP_ROOT, ASSETS_DIR, ensure_runtime_dirs
+from indexador_documentos.desktop_api import DesktopAPI
+from indexador_documentos.utils import ASSETS_DIR, ensure_runtime_dirs
 
 
 def _safe_import_webview():

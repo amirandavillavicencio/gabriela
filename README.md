@@ -102,3 +102,37 @@ Variables de entorno relevantes:
 - OCR depende de Tesseract instalado localmente con idioma disponible.
 - OCR Transformer sigue siendo opcional y pesado (dependencias no obligatorias).
 - El backend está desacoplado de UI, pero la UI deberá consumir `services.py` para progreso/estado.
+
+
+## Build de aplicación portable Windows (PyInstaller)
+
+Entry point desktop:
+
+```bash
+python launch_desktop.py
+```
+
+Build local (Windows):
+
+```bat
+scripts\build_portable_windows.bat
+```
+
+Build manual:
+
+```bash
+pip install -r requirements-desktop.txt
+pyinstaller --noconfirm --clean AppPortable.spec
+```
+
+Salida esperada:
+
+```text
+dist/AppPortable/AppPortable.exe
+```
+
+Workflow dedicado de build Windows:
+
+- `.github/workflows/build_portable_windows.yml`
+- artefacto final: `AppPortable_windows_portable`
+
