@@ -8,11 +8,12 @@ from typing import Any
 
 from buscador import buscar_en_indice
 from chunker import generar_y_guardar_chunks
+from desktop_app import run_desktop_app
 from extractor_pdf import PDFExtractionError, extraer_pdf
 from indexador import indexar_documento
 from ui import run_ui
 from gradio_ui import run_gradio_ui
-from utils import OUTPUT_DIR
+from utils import INDEX_DIR, OUTPUT_DIR, ensure_runtime_dirs
 
 
 def log(level: str, message: str) -> None:
@@ -25,14 +26,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pdf", nargs="*", help="Ruta(s) de PDF a procesar")
     parser.add_argument("--batch", help="Carpeta con PDFs")
     parser.add_argument("--input-dir", help="Alias de --batch para ejecución en CI")
-    parser.add_argument("--output-dir", help="Carpeta de salida (por defecto: salida)")
+    parser.add_argument("--output-dir", help="Carpeta de salida de documentos/chunks")
+    parser.add_argument("--index-dir", help="Carpeta para índice global SQLite")
     parser.add_argument("--json", action="store_true", dest="save_json", help="Generar documento.json")
     parser.add_argument("--chunks", action="store_true", help="Generar chunks.json")
     parser.add_argument("--index", action="store_true", help="Generar índice local y global SQLite FTS5")
     parser.add_argument("--search", help="Buscar término/frase en indice_global.sqlite")
     parser.add_argument("--phrase", action="store_true", help="Búsqueda exacta por frase")
     parser.add_argument("--limit", type=int, default=20, help="Límite de resultados de búsqueda")
-    parser.add_argument("--ui", action="store_true", help="Abrir interfaz gráfica")
+    parser.add_argument("--ui", action="store_true", help="Abrir interfaz Tkinter clásica")
+    parser.add_argument("--desktop", action="store_true", help="Abrir interfaz desktop principal (mockup dashboard)")
     parser.add_argument("--gradio", action="store_true", help="Abrir interfaz local en Gradio")
     parser.add_argument("--force-ocr", action="store_true", help="Forzar OCR por página aunque exista texto embebido")
     return parser
@@ -71,6 +74,14 @@ def validate_output_root(raw_output_dir: str | None) -> Path:
     return output_root
 
 
+def validate_index_root(raw_index_dir: str | None) -> Path:
+    index_root = Path(raw_index_dir) if raw_index_dir else INDEX_DIR
+    if index_root.exists() and not index_root.is_dir():
+        raise ValueError(f"Ruta de índice inválida (no es carpeta): {index_root}")
+    index_root.mkdir(parents=True, exist_ok=True)
+    return index_root
+
+
 def validate_input_path(path: Path) -> None:
     if not path.exists() or not path.is_file():
         raise FileNotFoundError(f"PDF inexistente: {path}")
@@ -102,8 +113,8 @@ def process_one_pdf(
     return {"doc": doc_data, "chunks": chunks, "index": index_stats}
 
 
-def run_search(query: str, limit: int, phrase: bool, output_root: Path | None = None) -> int:
-    db_path = (output_root or OUTPUT_DIR) / "indice_global.sqlite"
+def run_search(query: str, limit: int, phrase: bool, index_root: Path | None = None) -> int:
+    db_path = (index_root or INDEX_DIR) / "indice_global.sqlite"
     rows = buscar_en_indice(db_path, query=query, limit=limit, exact_phrase=phrase)
     if not rows:
         print("Sin resultados.")
@@ -118,16 +129,23 @@ def run_search(query: str, limit: int, phrase: bool, output_root: Path | None = 
 
 
 def main() -> int:
+    ensure_runtime_dirs()
     parser = build_parser()
     args = parser.parse_args()
     try:
         output_root = validate_output_root(args.output_dir)
+        index_root = validate_index_root(args.index_dir)
     except ValueError as exc:
         log("ERROR", str(exc))
         return 1
 
+    if args.desktop:
+        log("INFO", "Iniciando interfaz desktop principal.")
+        run_desktop_app()
+        return 0
+
     if args.ui:
-        log("INFO", "Iniciando interfaz gráfica.")
+        log("INFO", "Iniciando interfaz gráfica Tk.")
         run_ui()
         return 0
 
@@ -143,7 +161,7 @@ def main() -> int:
     if args.search:
         try:
             log("INFO", f"Ejecutando búsqueda (phrase={args.phrase}, limit={args.limit}).")
-            run_search(args.search, limit=args.limit, phrase=args.phrase, output_root=output_root)
+            run_search(args.search, limit=args.limit, phrase=args.phrase, index_root=index_root)
             return 0
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
             log("ERROR", str(exc))
