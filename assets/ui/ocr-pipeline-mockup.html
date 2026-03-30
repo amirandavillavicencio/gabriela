@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OCR Pipeline Desktop</title>
+  <style>
+    :root{--bg:#0b1220;--panel:#111b2f;--panel-2:#16233d;--text:#e5ecf8;--muted:#93a4c7;--line:#253451;--accent:#4f86ff;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--radius:14px}
+    html[data-theme='light']{--bg:#f2f5fb;--panel:#ffffff;--panel-2:#f8faff;--text:#17233a;--muted:#5d6b88;--line:#d7dfef;--accent:#2f67f4}
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,Segoe UI,Arial;background:var(--bg);color:var(--text)}
+    .topbar{height:64px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 18px;position:sticky;top:0;z-index:9}
+    .brand{font-weight:700;letter-spacing:.2px}.row{display:flex;gap:8px;align-items:center}
+    .wrap{display:grid;grid-template-columns:250px 1fr;min-height:calc(100vh - 64px)}
+    .sidebar{background:var(--panel);border-right:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:10px}
+    .side-item{padding:10px 12px;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--muted)}
+    .side-item.active{background:var(--panel-2);border-color:var(--line);color:var(--text)}
+    .main{padding:16px;display:grid;gap:12px}
+    .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+    .kpi .v{font-size:26px;font-weight:700}.kpi .l{color:var(--muted);font-size:13px}
+    .grid{display:grid;grid-template-columns:1.35fr 1fr;gap:12px}
+    .subgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .title{font-weight:600;margin:0 0 8px}.muted{color:var(--muted);font-size:12px}
+    .btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:9px 12px;cursor:pointer}
+    .btn.alt{background:transparent;border:1px solid var(--line);color:var(--text)}
+    .input,select{background:var(--panel-2);border:1px solid var(--line);color:var(--text);padding:8px;border-radius:10px}
+    .list{max-height:190px;overflow:auto;display:grid;gap:6px}
+    .item{padding:8px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-size:13px}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px}
+    .queued{background:#47556933}.processing{background:#3b82f633}.done{background:#22c55e33}.error{background:#ef444433}
+    .progress{height:8px;background:var(--panel-2);border-radius:999px;overflow:hidden;border:1px solid var(--line)} .bar{height:100%;background:linear-gradient(90deg,var(--accent),#6ba4ff);width:0%}
+    .chunk{cursor:pointer}
+    pre{white-space:pre-wrap;margin:0;font-size:12px;max-height:220px;overflow:auto}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="row"><div class="brand">OCR Pipeline Desktop</div><span class="muted">Portable · Local</span></div>
+    <div class="row">
+      <button class="btn alt" onclick="toggleTheme()">Dark/Light</button>
+      <button class="btn alt" onclick="openOutput()">Output</button>
+      <button class="btn alt" onclick="openIndex()">Index</button>
+    </div>
+  </header>
+  <div class="wrap">
+    <aside class="sidebar">
+      <div class="side-item active">Dashboard</div>
+      <div class="side-item">Carga</div>
+      <div class="side-item">Procesamiento</div>
+      <div class="side-item">Resultados</div>
+      <div class="side-item">Flags</div>
+      <div class="card" style="margin-top:auto">
+        <p class="title">OCR status</p>
+        <p id="ocrStatus" class="muted">Verificando...</p>
+      </div>
+    </aside>
+    <main class="main">
+      <section class="kpis">
+        <div class="card kpi"><div class="l">Documentos</div><div class="v" id="kDocs">0</div></div>
+        <div class="card kpi"><div class="l">Chunks</div><div class="v" id="kChunks">0</div></div>
+        <div class="card kpi"><div class="l">Warnings</div><div class="v" id="kWarn">0</div></div>
+        <div class="card kpi"><div class="l">Indexados</div><div class="v" id="kIdx">0</div></div>
+      </section>
+      <section class="grid">
+        <div class="card">
+          <p class="title">Zona de carga de documentos</p>
+          <div class="row" style="margin-bottom:8px">
+            <button class="btn" onclick="selectPDFs()">Seleccionar PDFs</button>
+            <label><input id="optJson" type="checkbox" checked> JSON</label>
+            <label><input id="optChunks" type="checkbox" checked> Chunks</label>
+            <label><input id="optIndex" type="checkbox" checked> Indexar</label>
+            <label><input id="optOCR" type="checkbox"> Forzar OCR</label>
+            <button class="btn" onclick="startProcessing()">Procesar</button>
+          </div>
+          <div class="progress"><div id="progressBar" class="bar"></div></div>
+          <p class="muted" id="progressTxt">0 / 0</p>
+          <p class="title">Cola de procesamiento</p>
+          <div id="queue" class="list"></div>
+        </div>
+        <div class="subgrid">
+          <div class="card"><p class="title">Panel de flags</p><div id="flags" class="list"></div></div>
+          <div class="card"><p class="title">Mapa de páginas</p><div id="pages" class="list"></div></div>
+          <div class="card" style="grid-column:1/3"><p class="title">Resultados / chunks</p><div id="chunks" class="list"></div></div>
+        </div>
+      </section>
+      <section class="grid">
+        <div class="card">
+          <p class="title">Búsqueda indexada</p>
+          <div class="row">
+            <input id="q" class="input" style="flex:1" placeholder="palabra o frase" />
+            <select id="limit"><option>20</option><option>50</option><option>100</option></select>
+            <label><input id="phrase" type="checkbox"> frase exacta</label>
+            <button class="btn" onclick="searchIndex()">Buscar</button>
+          </div>
+          <div id="searchResults" class="list" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <p class="title">Detalle del chunk</p>
+          <pre id="chunkDetail">Sin selección</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+<script>
+let selectedPDFs=[];
+async function callApi(fn,...args){return window.pywebview?.api?.[fn]?await window.pywebview.api[fn](...args):null;}
+function setText(id,v){document.getElementById(id).textContent=v;}
+function renderList(id,items,map){const el=document.getElementById(id);el.innerHTML='';items.forEach(it=>{const d=document.createElement('div');d.className='item';d.innerHTML=map(it);el.appendChild(d);});if(!items.length)el.innerHTML='<div class="muted">Sin datos.</div>';}
+async function selectPDFs(){selectedPDFs=await callApi('select_pdfs')||[];renderList('queue',selectedPDFs.map(p=>({path:p,status:'queued'})),q=>`${q.path.split(/[\\/]/).pop()} <span class="tag ${q.status}">${q.status}</span>`)}
+async function startProcessing(){const options={json:optJson.checked,chunks:optChunks.checked,index:optIndex.checked,force_ocr:optOCR.checked};await callApi('start_processing',selectedPDFs,options);}
+async function searchIndex(){const res=await callApi('search',q.value,parseInt(limit.value),phrase.checked);const rows=(res&&res.rows)||[];renderList('searchResults',rows,r=>`<b>${r.source_name}</b> · pág ${r.page_start}-${r.page_end}<br>${r.snippet}`)}
+async function openOutput(){await callApi('open_output_folder')}
+async function openIndex(){await callApi('open_index_folder')}
+async function toggleTheme(){const html=document.documentElement;const theme=html.dataset.theme==='dark'?'light':'dark';html.dataset.theme=theme;await callApi('set_theme',theme)}
+async function refresh(){const s=await callApi('get_state');if(!s)return;setText('kDocs',s.metrics.documents);setText('kChunks',s.metrics.chunks);setText('kWarn',s.metrics.warnings);setText('kIdx',s.metrics.indexed);
+const pct=s.progress.total?Math.round((s.progress.done/s.progress.total)*100):0;document.getElementById('progressBar').style.width=pct+'%';setText('progressTxt',`${s.progress.done} / ${s.progress.total}`);
+renderList('queue',s.queue,q=>`${q.path.split(/[\\/]/).pop()} <span class="tag ${q.status}">${q.status}</span>`);
+renderList('flags',s.flags,f=>`<b>${f.doc}</b><br>${f.message}`);
+const latest=(s.processed||[]).slice(-1)[0];renderList('pages',latest?latest.pages:[],p=>`Página ${p.page_number} · ${p.text_source}<br><span class='muted'>${(p.clean_text||'').slice(0,90)}</span>`);
+renderList('chunks',(s.chunks||[]).slice(-40),c=>`<div class='chunk' onclick="selectChunk('${c.chunk_id}')"><b>${c.chunk_id}</b> · pág ${c.page_start}-${c.page_end}<br>${c.text.slice(0,120)}...</div>`);
+if(s.selected_chunk){setText('chunkDetail',JSON.stringify(s.selected_chunk,null,2));}}
+async function selectChunk(chunkId){const r=await callApi('select_chunk',chunkId);if(r&&r.chunk){setText('chunkDetail',JSON.stringify(r.chunk,null,2));}}
+async function init(){const b=await callApi('bootstrap');if(b?.ocr){setText('ocrStatus',b.ocr.message);}setInterval(refresh,900);refresh();}
+window.addEventListener('pywebviewready',init);
+</script>
+</body>
+</html>

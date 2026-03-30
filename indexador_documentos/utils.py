@@ -2,12 +2,42 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-OUTPUT_DIR = Path("salida")
+
+def _resolve_app_root() -> Path:
+    env_root = os.getenv("APP_PORTABLE_ROOT")
+    if env_root:
+        return Path(env_root).resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+APP_ROOT = _resolve_app_root()
+INPUT_DIR = APP_ROOT / "input"
+OUTPUT_DIR = APP_ROOT / "output"
+INDEX_DIR = APP_ROOT / "index"
+TEMP_DIR = APP_ROOT / "temp"
+ASSETS_DIR = APP_ROOT / "assets"
+
+
+def ensure_runtime_dirs() -> dict[str, Path]:
+    dirs = {
+        "app_root": APP_ROOT,
+        "input": INPUT_DIR,
+        "output": OUTPUT_DIR,
+        "index": INDEX_DIR,
+        "temp": TEMP_DIR,
+        "assets": ASSETS_DIR,
+    }
+    for path in dirs.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return dirs
 
 
 def utc_now_iso() -> str:

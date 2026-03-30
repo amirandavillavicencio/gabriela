@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from utils import OUTPUT_DIR, document_output_dir
+from utils import INDEX_DIR, OUTPUT_DIR, document_output_dir, ensure_runtime_dirs
 
 
 def _connect(db_path: Path) -> sqlite3.Connection:
@@ -110,9 +110,10 @@ def indexar_chunks(chunks: list[dict[str, Any]], db_path: Path) -> dict[str, int
 
 
 def indexar_documento(chunks: list[dict[str, Any]], source_name: str, output_root: Path | None = None) -> dict[str, Any]:
+    ensure_runtime_dirs()
     out_dir = document_output_dir(source_name, output_root)
     local_db = out_dir / "indice.sqlite"
-    global_db = (output_root or OUTPUT_DIR) / "indice_global.sqlite"
+    global_db = ((output_root or OUTPUT_DIR) if output_root else INDEX_DIR) / "indice_global.sqlite"
 
     local_stats = indexar_chunks(chunks, local_db)
     global_stats = indexar_chunks(chunks, global_db)
