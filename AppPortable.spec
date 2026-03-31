@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import os
 
 root = Path(__file__).resolve().parent
 
@@ -16,6 +17,8 @@ hiddenimports = [
     "webview",
     "webview.platforms.winforms",
     "webview.platforms.edgechromium",
+    "indexador_documentos.desktop_app",
+    "indexador_documentos.desktop_api",
 ]
 
 a = Analysis(

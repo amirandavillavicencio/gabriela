@@ -32,7 +32,7 @@ def run_desktop_app() -> None:
     api = DesktopAPI()
     ui_html = _resolve_ui_html().as_uri()
 
-    window = webview.create_window(
+    webview.create_window(
         "OCR Pipeline Desktop",
         url=ui_html,
         js_api=api,
