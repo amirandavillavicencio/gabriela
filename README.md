@@ -102,3 +102,8 @@ Variables de entorno relevantes:
 - OCR depende de Tesseract instalado localmente con idioma disponible.
 - OCR Transformer sigue siendo opcional y pesado (dependencias no obligatorias).
 - El backend está desacoplado de UI, pero la UI deberá consumir `services.py` para progreso/estado.
+
+## Migración .NET 8 (WPF)
+
+Se agregó una migración nativa a Windows en `AppPortable.sln`.
+Ver `MIGRACION_CSHARP.md` para arquitectura, build y publish.
