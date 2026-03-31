@@ -17,6 +17,8 @@ hiddenimports = [
     "webview",
     "webview.platforms.winforms",
     "webview.platforms.edgechromium",
+    "indexador_documentos.desktop_app",
+    "indexador_documentos.desktop_api",
 ]
 
 a = Analysis(

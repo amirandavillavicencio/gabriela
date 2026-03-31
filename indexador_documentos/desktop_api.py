@@ -5,12 +5,12 @@ from pathlib import Path
 from tkinter import Tk, filedialog
 from typing import Any
 
-from buscador import buscar_en_indice
-from chunker import generar_y_guardar_chunks
-from extractor_pdf import PDFExtractionError, extraer_pdf
-from indexador import indexar_documento
-from ocr_engine import OCRUnavailableError, validar_ocr_disponible
-from utils import INDEX_DIR, OUTPUT_DIR, ensure_runtime_dirs, open_folder
+from indexador_documentos.buscador import buscar_en_indice
+from indexador_documentos.chunker import generar_y_guardar_chunks
+from indexador_documentos.extractor_pdf import PDFExtractionError, extraer_pdf
+from indexador_documentos.indexador import indexar_documento
+from indexador_documentos.ocr_engine import OCRUnavailableError, validar_ocr_disponible
+from indexador_documentos.utils import INDEX_DIR, OUTPUT_DIR, ensure_runtime_dirs, open_folder
 
 
 class DesktopAPI:

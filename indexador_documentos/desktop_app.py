@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from desktop_api import DesktopAPI
-from utils import APP_ROOT, ASSETS_DIR, ensure_runtime_dirs
+from indexador_documentos.desktop_api import DesktopAPI
+from indexador_documentos.utils import ASSETS_DIR, ensure_runtime_dirs
 
 
 def _safe_import_webview():
@@ -32,7 +32,7 @@ def run_desktop_app() -> None:
     api = DesktopAPI()
     ui_html = _resolve_ui_html().as_uri()
 
-    window = webview.create_window(
+    webview.create_window(
         "OCR Pipeline Desktop",
         url=ui_html,
         js_api=api,
