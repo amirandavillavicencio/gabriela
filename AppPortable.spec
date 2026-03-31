@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import os
 
-root = Path.cwd()
+root = Path(os.getcwd()).resolve()
 
 # Incluye todo el árbol de assets (html/css/js/templates/etc.)
 datas = [
@@ -19,8 +20,8 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    ["launch_desktop.py"],
-    pathex=[str(root), str(root / "indexador_documentos")],
+    [str(root / "launch_desktop.py")],
+    pathex=[str(root)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
