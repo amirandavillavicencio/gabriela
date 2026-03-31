@@ -1,8 +1,0 @@
-pymupdf
-pytesseract
-Pillow
-pywebview
-# OCR Transformer opcional (pesado):
-transformers
-torch
-gradio
