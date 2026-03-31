@@ -3,7 +3,7 @@
 from pathlib import Path
 import os
 
-root = Path(os.getcwd()).resolve()
+root = Path(__file__).resolve().parent
 
 # Incluye todo el árbol de assets (html/css/js/templates/etc.)
 datas = [
