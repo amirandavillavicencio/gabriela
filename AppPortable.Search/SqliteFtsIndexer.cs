@@ -1,5 +1,5 @@
-using AppPortable.Application.Abstractions;
-using AppPortable.Domain.Models;
+using AppPortable.Core.Abstractions;
+using AppPortable.Core.Models;
 using AppPortable.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 

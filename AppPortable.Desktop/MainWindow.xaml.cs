@@ -1,5 +1,5 @@
 using System.Windows;
-using AppPortable.Application.Services;
+using AppPortable.Core.Services;
 using AppPortable.Desktop.ViewModels;
 using AppPortable.Infrastructure.Persistence;
 using AppPortable.Infrastructure.Processing;

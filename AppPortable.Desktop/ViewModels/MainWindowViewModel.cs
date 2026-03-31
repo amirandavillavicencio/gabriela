@@ -2,8 +2,8 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
-using AppPortable.Application.Services;
-using AppPortable.Domain.Models;
+using AppPortable.Core.Services;
+using AppPortable.Core.Models;
 using AppPortable.Infrastructure.Persistence;
 
 namespace AppPortable.Desktop.ViewModels;

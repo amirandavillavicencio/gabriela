@@ -1,66 +1,60 @@
-# Migración a C#/.NET (Windows nativo)
+# Migración real a C#/.NET 8 (Windows nativo)
 
-## Stack elegido
+## Mapeo Python → C#
 
-- **WPF + .NET 8** para escritorio Windows (estable y mantenible).
-- **SQLite FTS5** para indexación/búsqueda local (despliegue simple, sin servidor).
-- **PdfPig** para extracción nativa de texto PDF.
-- **Tesseract CLI** opcional para OCR fallback sin Python embebido.
+- `indexador_documentos/extractor_pdf.py` → `AppPortable.Infrastructure/Processing/PdfPigTextExtractor.cs`
+- `indexador_documentos/ocr_engine.py` → `AppPortable.Infrastructure/Processing/TesseractCliOcrEngine.cs`
+- `indexador_documentos/chunker.py` → `AppPortable.Infrastructure/Processing/SemanticChunker.cs`
+- `indexador_documentos/indexador.py` + `buscador.py` → `AppPortable.Search/SqliteFtsIndexer.cs`
+- `indexador_documentos/services.py` → `AppPortable.Core/Services/DocumentPipelineService.cs`
+- modelos JSON/documento/chunks → `AppPortable.Core/Models/*.cs`
+- UI Python desktop (legacy) → `AppPortable.Desktop` (WPF)
 
-## Solución
+## Arquitectura resultante
 
 ```text
 AppPortable.sln
-  AppPortable.Desktop        (UI WPF)
-  AppPortable.Application    (casos de uso / orquestación)
-  AppPortable.Domain         (modelos)
-  AppPortable.Infrastructure (PDF, OCR, JSON, filesystem, chunking)
-  AppPortable.Search         (SQLite FTS5)
-  AppPortable.Tests          (tests)
+  AppPortable.Desktop
+  AppPortable.Core
+  AppPortable.Infrastructure
+  AppPortable.Search
+  AppPortable.Tests
 ```
 
-## Persistencia local
+## UI WPF cubierta
 
-Por defecto en:
+- Cargar PDF.
+- Procesar documento.
+- Estado/progreso.
+- Lista de documentos procesados.
+- Búsqueda sobre índice global.
+- Panel de detalle de documento/chunk.
 
-`%LocalAppData%\AppPortable`
+## OCR elegido
 
-Estructura:
+- Tesseract CLI (estable y mantenible en Windows).
+- Variables: `TESSERACT_CMD`, `TESSERACT_LANG`.
 
-```text
-input/
-output/
-  documents/<document_id>/extracted/document.json
-  documents/<document_id>/extracted/pages.json
-  documents/<document_id>/extracted/chunks.json
-  index/indice_global.sqlite
-temp/
-logs/
-```
+## Indexación/búsqueda elegida
 
-## OCR
+- SQLite + FTS5 (`Microsoft.Data.Sqlite`).
+- Índice global: `output/index/indice_global.sqlite`.
 
-`TesseractCliOcrEngine` ejecuta `tesseract` del PATH o `TESSERACT_CMD`.
-
-Variables:
-
-- `TESSERACT_CMD` (ruta opcional al ejecutable)
-- `TESSERACT_LANG` (ej. `spa`, `eng`, `spa+eng`)
-
-## Build / publish
-
-Compilar solución:
+## Build/publicación
 
 ```bash
+dotnet restore AppPortable.sln
 dotnet build AppPortable.sln -c Release
-```
-
-Publicación Windows (self-contained recomendado):
-
-```bash
 dotnet publish AppPortable.Desktop/AppPortable.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
-Ejecutable esperado:
+Salida:
 
 `AppPortable.Desktop/bin/Release/net8.0-windows/win-x64/publish/AppPortable.exe`
+
+## Legacy explícito
+
+- `legacy/python-desktop/AppPortable.spec`
+- `legacy/python-desktop/launch_desktop.py`
+
+No se usa PyInstaller para la app desktop final.

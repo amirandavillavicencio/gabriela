@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using AppPortable.Application.Abstractions;
+using AppPortable.Core.Abstractions;
 
 namespace AppPortable.Infrastructure.Processing;
 
