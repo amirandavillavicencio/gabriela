@@ -1,18 +1,16 @@
 @echo off
 setlocal
 
-python -m venv .venv
-call .venv\Scripts\activate
-python -m pip install --upgrade pip
-pip install -r indexador_documentos\requirements.txt
-pip install pyinstaller
+REM Build .NET desktop native app (WPF) - no Python packaging
 
-pyinstaller --noconfirm --clean AppPortable.spec
+dotnet restore AppPortable.sln
+if errorlevel 1 exit /b 1
 
-if not exist dist\AppPortable\data\input mkdir dist\AppPortable\data\input
-if not exist dist\AppPortable\data\output mkdir dist\AppPortable\data\output
-if not exist dist\AppPortable\data\app_state mkdir dist\AppPortable\data\app_state
-if not exist dist\AppPortable\data\temp mkdir dist\AppPortable\data\temp
+dotnet build AppPortable.sln -c Release
+if errorlevel 1 exit /b 1
 
-echo Build completado en dist\AppPortable\AppPortable.exe
+dotnet publish AppPortable.Desktop\AppPortable.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+if errorlevel 1 exit /b 1
+
+echo Build completado en AppPortable.Desktop\bin\Release\net8.0-windows\win-x64\publish\AppPortable.exe
 endlocal

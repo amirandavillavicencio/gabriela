@@ -1,18 +1,9 @@
-# Indexador local de PDFs judiciales (híbrido)
+# Indexador local de PDFs judiciales (legacy Python)
 
-## Ejecutar app desktop (UI tipo dashboard)
+> Este módulo Python se conserva por compatibilidad histórica.
+> La app desktop objetivo/final está en `AppPortable.sln` (.NET 8 + WPF).
 
-```bash
-python main.py --desktop
-```
-
-## Ejecutar GUI Tk clásica
-
-```bash
-python main.py --ui
-```
-
-## CLI
+## CLI legacy (Python)
 
 ```bash
 python main.py archivo.pdf --json
@@ -22,18 +13,15 @@ python main.py --batch carpeta_con_pdfs --json --chunks --index
 python main.py --search "medida cautelar"
 ```
 
-## Build Windows portable
+## Desktop final (Windows nativo)
 
-Usar `../scripts/build_portable_windows.bat` con `PyInstaller` y el spec `../AppPortable.spec`.
+Compilar/publicar desde la solución .NET:
 
-## Salida esperada
-
-```text
-output/
-  <nombre_documento>/
-    documento.json
-    chunks.json
-    indice.sqlite
-index/
-  indice_global.sqlite
+```bash
+dotnet build ../AppPortable.sln -c Release
+dotnet publish ../AppPortable.Desktop/AppPortable.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
+
+Salida esperada del ejecutable:
+
+`../AppPortable.Desktop/bin/Release/net8.0-windows/win-x64/publish/AppPortable.exe`

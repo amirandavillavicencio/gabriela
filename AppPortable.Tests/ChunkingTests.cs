@@ -1,4 +1,4 @@
-using AppPortable.Domain.Models;
+using AppPortable.Core.Models;
 using AppPortable.Infrastructure.Processing;
 
 namespace AppPortable.Tests;
