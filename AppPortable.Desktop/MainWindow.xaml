@@ -1,0 +1,66 @@
+<Window x:Class="AppPortable.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="AppPortable" Height="760" Width="1240">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="3*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="2*"/>
+            <RowDefinition Height="2*"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,12">
+            <Button Content="Cargar PDF" Width="130" Margin="0,0,8,0" Command="{Binding PickDocumentCommand}"/>
+            <Button Content="Procesar" Width="120" Margin="0,0,8,0" Command="{Binding ProcessSelectedCommand}"/>
+            <TextBlock Text="Consulta:" VerticalAlignment="Center" Margin="24,0,8,0"/>
+            <TextBox Width="320" Text="{Binding QueryText, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0"/>
+            <Button Content="Buscar" Width="90" Command="{Binding SearchCommand}"/>
+        </StackPanel>
+
+        <GroupBox Header="Documentos" Grid.Row="1" Margin="0,0,12,12">
+            <ListBox ItemsSource="{Binding Documents}" SelectedItem="{Binding SelectedDocument}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel>
+                            <TextBlock Text="{Binding SourceFile}" FontWeight="Bold"/>
+                            <TextBlock Text="{Binding DocumentId}" FontSize="11"/>
+                            <TextBlock Text="{Binding ExtractionSummary.OcrUsed, StringFormat=OCR usado: {0}}" FontSize="11"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </GroupBox>
+
+        <GroupBox Header="Estado del motor" Grid.Column="1" Grid.Row="1" Margin="0,0,0,12">
+            <StackPanel Margin="8">
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
+                <ProgressBar Height="20" Margin="0,8,0,0" Minimum="0" Maximum="100" Value="{Binding ProgressValue}"/>
+                <TextBlock Text="{Binding LastLog}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </GroupBox>
+
+        <GroupBox Header="Resultados de búsqueda" Grid.ColumnSpan="2" Grid.Row="2" Margin="0,0,0,12">
+            <DataGrid ItemsSource="{Binding Results}" AutoGenerateColumns="False" IsReadOnly="True" SelectedItem="{Binding SelectedResult}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Documento" Binding="{Binding SourceFile}" Width="*"/>
+                    <DataGridTextColumn Header="Pág." Binding="{Binding PageStart}" Width="70"/>
+                    <DataGridTextColumn Header="Chunk" Binding="{Binding ChunkIndex}" Width="70"/>
+                    <DataGridTextColumn Header="Score" Binding="{Binding Score}" Width="90"/>
+                    <DataGridTextColumn Header="Snippet" Binding="{Binding Snippet}" Width="2*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </GroupBox>
+
+        <GroupBox Header="Detalle" Grid.ColumnSpan="2" Grid.Row="3">
+            <TextBox Text="{Binding DetailText}" IsReadOnly="True" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+        </GroupBox>
+    </Grid>
+</Window>

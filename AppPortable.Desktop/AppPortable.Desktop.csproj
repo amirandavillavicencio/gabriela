@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AppPortable</AssemblyName>
+    <RootNamespace>AppPortable.Desktop</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AppPortable.Application\AppPortable.Application.csproj" />
+    <ProjectReference Include="..\AppPortable.Domain\AppPortable.Domain.csproj" />
+    <ProjectReference Include="..\AppPortable.Infrastructure\AppPortable.Infrastructure.csproj" />
+    <ProjectReference Include="..\AppPortable.Search\AppPortable.Search.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+  </ItemGroup>
+</Project>
