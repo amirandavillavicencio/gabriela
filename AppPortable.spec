@@ -3,6 +3,7 @@
 from pathlib import Path
 import os
 
+# Root del repositorio para entornos CI.
 root = Path(os.getcwd()).resolve()
 
 # Incluye todo el árbol de assets (html/css/js/templates/etc.)
